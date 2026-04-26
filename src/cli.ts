@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto"
-import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises"
-import { basename, extname, join, relative, resolve } from "node:path"
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { basename, join, relative, resolve } from "node:path"
 import { homedir } from "node:os"
 import { VmHostApiClient, type DeployArtifacts } from "./client"
+import { ImageDownload } from "./download"
 
 const DEFAULT_OUTPUT_DIR = "build"
 const DEFAULT_TEMPLATE_DIR = "templates"
@@ -71,7 +71,8 @@ async function buildInstance(args: BuildArgs) {
   const metaData = renderTemplate(await readFile(metaDataTemplatePath, "utf8"), replacements)
   const vmXml = renderTemplate(await readFile(vmXmlTemplatePath, "utf8"), replacements)
 
-  const baseImagePath = await downloadBaseImage(args.baseImageUrl, outputRootDir)
+  const baseImageDownload = new ImageDownload(args.baseImageUrl, outputRootDir)
+  const baseImagePath = await baseImageDownload.ensureDownloaded()
   console.log(`Using base image ${baseImagePath}`)
 
   await mkdir(outputDir, { recursive: true })
@@ -312,36 +313,6 @@ async function assertPathDoesNotExist(path: string, message: string) {
   throw new Error(message)
 }
 
-async function downloadBaseImage(url: string, outputRootDir: string) {
-  const parsedUrl = new URL(url)
-  const filename = localFilenameForUrl(parsedUrl)
-  const destinationPath = join(outputRootDir, filename)
-  const destinationFile = Bun.file(destinationPath)
-
-  if (await destinationFile.exists()) {
-    return destinationPath
-  }
-
-  const tempPath = `${destinationPath}.download`
-
-  console.log(`Downloading ${url}`)
-  const response = await fetch(parsedUrl)
-
-  if (!response.ok) {
-    throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`)
-  }
-
-  try {
-    await writeResponseWithProgress(response, tempPath)
-    await rename(tempPath, destinationPath)
-  } catch (error) {
-    await unlinkIfPresent(tempPath)
-    throw error
-  }
-
-  return destinationPath
-}
-
 async function createLinkedDisk(baseImagePath: string, vmDiskPath: string, vmDir: string) {
   const relativeBackingPath = relative(vmDir, baseImagePath)
 
@@ -351,95 +322,8 @@ async function createLinkedDisk(baseImagePath: string, vmDiskPath: string, vmDir
   })
 }
 
-function localFilenameForUrl(url: URL) {
-  const baseName = basename(url.pathname)
-
-  if (baseName) {
-    return baseName
-  }
-
-  const extension = extname(url.pathname) || ".qcow2"
-  const digest = createHash("sha256").update(url.toString()).digest("hex").slice(0, 16)
-  return `base-${digest}${extension}`
-}
-
 function looksLikeFilePath(value: string) {
   return value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("~")
-}
-
-async function writeResponseWithProgress(response: Response, destinationPath: string) {
-  if (!response.body) {
-    throw new Error("Download response did not include a body")
-  }
-
-  const totalBytesHeader = response.headers.get("content-length")
-  const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN
-  const hasKnownLength = Number.isFinite(totalBytes) && totalBytes > 0
-
-  const file = await open(destinationPath, "w")
-  const reader = response.body.getReader()
-  let downloadedBytes = 0
-  let lastRenderAt = 0
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-
-      if (done) {
-        break
-      }
-
-      if (!value) {
-        continue
-      }
-
-      await file.write(value)
-      downloadedBytes += value.byteLength
-
-      const now = Date.now()
-      if (now - lastRenderAt >= 100) {
-        renderProgress(downloadedBytes, hasKnownLength ? totalBytes : null)
-        lastRenderAt = now
-      }
-    }
-
-    renderProgress(downloadedBytes, hasKnownLength ? totalBytes : null)
-    process.stdout.write("\n")
-  } finally {
-    await file.close()
-  }
-}
-
-function renderProgress(downloadedBytes: number, totalBytes: number | null) {
-  const downloadedLabel = formatBytes(downloadedBytes)
-
-  if (!totalBytes) {
-    process.stdout.write(`\rDownloaded ${downloadedLabel}`)
-    return
-  }
-
-  const width = 24
-  const ratio = Math.min(downloadedBytes / totalBytes, 1)
-  const filled = Math.round(ratio * width)
-  const bar = `${"=".repeat(Math.max(filled - 1, 0))}${filled > 0 ? ">" : ""}${" ".repeat(width - filled)}`
-  const percent = (ratio * 100).toFixed(1).padStart(5, " ")
-  const totalLabel = formatBytes(totalBytes)
-
-  process.stdout.write(`\r[${bar}] ${percent}% ${downloadedLabel}/${totalLabel}`)
-}
-
-function formatBytes(bytes: number) {
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"]
-  let value = bytes
-  let unitIndex = 0
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-
-  const digits = unitIndex === 0 ? 0 : value >= 10 ? 1 : 2
-  return `${value.toFixed(digits)} ${units[unitIndex]}`
 }
 
 function renderTemplate(template: string, replacements: Record<string, string>) {
@@ -555,19 +439,6 @@ function runCommand(
   }
 
   return result
-}
-
-async function unlinkIfPresent(path: string) {
-  try {
-    await unlink(path)
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
-    if (code === "ENOENT") {
-      return
-    }
-
-    throw error
-  }
 }
 
 async function removeDirectoryIfPresent(path: string) {
