@@ -282,7 +282,7 @@ export class DataDir {
       throw error
     }
 
-    await rm(targetPath, { force: true })
+    await rm(targetPath, { force: true, recursive: true })
   }
 
   private async readJsonFile<T>(path: string): Promise<T | undefined> {
