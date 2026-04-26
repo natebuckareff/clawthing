@@ -2,37 +2,50 @@
   <name>{{NAME}}</name>
   <memory unit="MiB">2048</memory>
   <vcpu>1</vcpu>
-  <os>
-    <type arch="x86_64">hvm</type>
-    <boot dev="hd" />
+  <metadata>
+    <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
+      <libosinfo:os id="http://debian.org/debian/13"/>
+    </libosinfo:libosinfo>
+  </metadata>
+  <os firmware="efi">
+    <type arch="x86_64" machine="q35">hvm</type>
+    <boot dev="hd"/>
   </os>
-  <on_crash>preserve</on_crash>
   <features>
     <acpi/>
     <apic/>
   </features>
+  <cpu mode="host-passthrough"/>
+  <clock offset="utc"/>
+  <on_crash>preserve</on_crash>
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type="file" device="disk">
-      <driver name="qemu" type="qcow2" />
-      <source file="/srv/vms/{{NAME}}.qcow2" />
-      <target dev="vda" bus="virtio" />
+      <driver name="qemu" type="qcow2"/>
+      <source file="/srv/vms/{{NAME}}/disk.qcow2"/>
+      <target dev="vda" bus="virtio"/>
     </disk>
-    <disk type="file" device="cdrom">
-      <driver name="qemu" type="raw" />
-      <source file="/srv/vms/{{NAME}}.iso" />
-      <target dev="sda" bus="sata" />
-      <readonly />
+    <disk type="file" device="disk">
+      <driver name="qemu" type="raw"/>
+      <source file="/srv/vms/{{NAME}}/seed.iso"/>
+      <target dev="vdb" bus="virtio"/>
+      <readonly/>
     </disk>
     <interface type="network">
-      <source network="net" />
-      <model type="virtio" />
+      <source network="net"/>
+      <model type="virtio"/>
     </interface>
+    <serial type="pty">
+      <target type="isa-serial" port="0"/>
+    </serial>
     <console type="pty">
       <target type="serial" port="0"/>
     </console>
-    <serial type="pty">
-      <target port="0"/>
-    </serial>
+    <channel type="unix">
+      <target type="virtio" name="org.qemu.guest_agent.0"/>
+    </channel>
+    <rng model="virtio">
+      <backend model="random">/dev/urandom</backend>
+    </rng>
   </devices>
 </domain>
