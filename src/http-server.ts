@@ -50,6 +50,20 @@ export class HttpServer {
         return jsonResponse(200, { data: await this.api.listImages() })
       }
 
+      if (pathname === "/api/create-vm") {
+        if (!isCreateVmBody(body)) {
+          return jsonResponse(400, {
+            error: {
+              message: "Invalid create-vm request body",
+            },
+          })
+        }
+
+        return jsonResponse(200, {
+          data: await this.api.createVm(body),
+        })
+      }
+
       if (pathname === "/api/create-image") {
         if (!isCreateImageBody(body)) {
           return jsonResponse(400, {
@@ -96,6 +110,37 @@ function isCreateImageBody(body: unknown): body is { name: string; url: string }
     typeof body.name === "string" &&
     "url" in body &&
     typeof body.url === "string"
+  )
+}
+
+function isCreateVmBody(
+  body: unknown,
+): body is {
+  name: string
+  baseImageId: string
+  user: string
+  sshPublicKey: string
+  tailscaleAuthKey: string
+  memory: number
+  vcpu: number
+} {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "name" in body &&
+    typeof body.name === "string" &&
+    "baseImageId" in body &&
+    typeof body.baseImageId === "string" &&
+    "user" in body &&
+    typeof body.user === "string" &&
+    "sshPublicKey" in body &&
+    typeof body.sshPublicKey === "string" &&
+    "tailscaleAuthKey" in body &&
+    typeof body.tailscaleAuthKey === "string" &&
+    "memory" in body &&
+    typeof body.memory === "number" &&
+    "vcpu" in body &&
+    typeof body.vcpu === "number"
   )
 }
 

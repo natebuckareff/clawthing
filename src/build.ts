@@ -10,6 +10,8 @@ export interface VmBuildOptions {
   sshPublicKey: string
   tailscaleAuthKey: string
   baseImageUrl: string
+  memory: number
+  vcpu: number
   outputRootDir: string
   templateDir: string
   remoteRoot: string
@@ -45,11 +47,13 @@ export class VmBuild {
     await assertFileExists(templates.vmXmlTemplatePath)
 
     const replacements = {
+      MEMORY: String(this.options.memory),
       NAME: this.options.instance,
       USER: this.options.user.trim(),
       PUBLIC_KEY: this.options.sshPublicKey.trim(),
       TS_AUTH_KEY: this.options.tailscaleAuthKey.trim(),
-      REMOTE_ROOT: this.options.remoteRoot,
+      VCPUS: String(this.options.vcpu),
+      VM_DIR: `${this.options.remoteRoot}/${this.options.instance}`,
     }
 
     const userData = renderTemplate(await readFile(templates.userDataTemplatePath, "utf8"), replacements)

@@ -1,7 +1,7 @@
 <domain type="kvm">
   <name>{{NAME}}</name>
-  <memory unit="MiB">2048</memory>
-  <vcpu>1</vcpu>
+  <memory unit="MiB">{{MEMORY}}</memory>
+  <vcpu>{{VCPUS}}</vcpu>
   <metadata>
     <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
       <libosinfo:os id="http://debian.org/debian/13"/>
@@ -22,12 +22,12 @@
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type="file" device="disk">
       <driver name="qemu" type="qcow2"/>
-      <source file="{{REMOTE_ROOT}}/{{NAME}}/disk.qcow2"/>
+      <source file="{{VM_DIR}}/disk.qcow2"/>
       <target dev="vda" bus="virtio"/>
     </disk>
     <disk type="file" device="disk">
       <driver name="qemu" type="raw"/>
-      <source file="{{REMOTE_ROOT}}/{{NAME}}/seed.iso"/>
+      <source file="{{VM_DIR}}/seed.iso"/>
       <target dev="vdb" bus="virtio"/>
       <readonly/>
     </disk>

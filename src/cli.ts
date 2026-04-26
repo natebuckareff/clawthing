@@ -9,6 +9,8 @@ import { runCommand } from "./util"
 const DEFAULT_OUTPUT_DIR = "build"
 const DEFAULT_TEMPLATE_DIR = "templates"
 const DEFAULT_REMOTE_ROOT = "/srv/vms"
+const DEFAULT_VM_MEMORY = 2048
+const DEFAULT_VM_VCPU = 2
 
 type Command = "build" | "deploy"
 
@@ -18,6 +20,8 @@ interface BuildArgs {
   sshPublicKey: string
   tailscaleAuthKey: string
   baseImageUrl: string
+  memory: number
+  vcpu: number
   outputDir: string
   templateDir: string
   remoteRoot: string
@@ -51,6 +55,8 @@ async function buildInstance(args: BuildArgs) {
     sshPublicKey: args.sshPublicKey,
     tailscaleAuthKey: args.tailscaleAuthKey,
     baseImageUrl: args.baseImageUrl,
+    memory: args.memory,
+    vcpu: args.vcpu,
     outputRootDir,
     templateDir: resolve(args.templateDir),
     remoteRoot: normalizeRemoteRoot(args.remoteRoot),
@@ -142,6 +148,8 @@ async function parseBuildArgs(argv: string[]): Promise<BuildArgs> {
     sshPublicKey: await resolveValue(required(values, "--ssh-public-key")),
     tailscaleAuthKey: required(values, "--tailscale-auth-key"),
     baseImageUrl: required(values, "--base-image-url"),
+    memory: values.has("--memory") ? parseIntegerFlag(values, "--memory") : DEFAULT_VM_MEMORY,
+    vcpu: values.has("--vcpu") ? parseIntegerFlag(values, "--vcpu") : DEFAULT_VM_VCPU,
     outputDir: values.get("--output-dir") ?? DEFAULT_OUTPUT_DIR,
     templateDir: values.get("--template-dir") ?? DEFAULT_TEMPLATE_DIR,
     remoteRoot: values.get("--remote-root") ?? DEFAULT_REMOTE_ROOT,
@@ -206,9 +214,19 @@ function required(values: Map<string, string>, flag: string): string {
 function usage() {
   return [
     "Usage:",
-    "  bun run cloud.ts build --instance vm01 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... --base-image-url https://... [--remote-root /srv/vms]",
+    "  bun run cloud.ts build --instance vm01 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... --base-image-url https://... [--memory 2048] [--vcpu 2] [--remote-root /srv/vms]",
     "  bun run cloud.ts deploy --instance vm01 --server storage [--remote-root /srv/vms] [--dry-run]",
   ].join("\n")
+}
+
+function parseIntegerFlag(values: Map<string, string>, flag: string): number {
+  const value = Number.parseInt(required(values, flag), 10)
+
+  if (!Number.isInteger(value)) {
+    throw new Error(`Invalid integer for ${flag}: ${required(values, flag)}`)
+  }
+
+  return value
 }
 
 async function resolveValue(value: string): Promise<string> {

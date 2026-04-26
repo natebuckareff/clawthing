@@ -1,0 +1,198 @@
+import { randomUUID } from "node:crypto"
+import { readFile, writeFile } from "node:fs/promises"
+import { join, relative, resolve } from "node:path"
+import { DataDir } from "./data-dir"
+import { removeDirectoryIfPresent } from "./fs"
+import { runCommand } from "./util"
+import { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
+import { LoadVm } from "./load-vm"
+
+interface CreateVmOptions {
+  id?: string
+  templateDir?: string
+}
+
+export class CreateVm {
+  private readonly id: string
+  private status: VmStatus
+  private error?: string
+  private createPromise?: Promise<void>
+  private readonly templateDir: string
+
+  constructor(
+    private readonly dataDir: DataDir,
+    public readonly params: CreateVmParams,
+    options: CreateVmOptions = {},
+  ) {
+    this.id = options.id ?? randomUUID()
+    this.status = "creating"
+    this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")
+  }
+
+  async getInfo(): Promise<VmInfo> {
+    const baseImageMetadata = await this.dataDir.readImageMetadata(this.params.baseImageId)
+
+    return {
+      id: this.id,
+      name: this.params.name,
+      status: this.status,
+      baseImageId: this.params.baseImageId,
+      baseImageName: baseImageMetadata?.name ?? this.params.baseImageId,
+      memory: this.params.memory,
+      vcpu: this.params.vcpu,
+      error: this.error,
+    }
+  }
+
+  async start(): Promise<void> {
+    if (this.createPromise) {
+      return
+    }
+
+    const vmDir = await this.dataDir.getVmDirPath(this.id)
+    await removeDirectoryIfPresent(vmDir)
+    await this.dataDir.writeVmRequest(this.id, this.toRequest())
+
+    this.createPromise = this.runCreate().catch((error: unknown) => {
+      this.error = error instanceof Error ? error.message : String(error)
+      this.status = "create-fail"
+    })
+  }
+
+  async complete(): Promise<LoadVm | undefined> {
+    if (this.status === "creating") {
+      return undefined
+    }
+
+    if (this.status !== "stopped") {
+      return undefined
+    }
+
+    return new LoadVm(this.dataDir, this.id)
+  }
+
+  private async runCreate(): Promise<void> {
+    const baseImageMetadata = await this.dataDir.readImageMetadata(this.params.baseImageId)
+    if (!baseImageMetadata) {
+      throw new Error(`Base image not found: ${this.params.baseImageId}`)
+    }
+
+    const baseImagePath = await this.dataDir.getImagePath(baseImageMetadata.id)
+    const vmDir = await this.dataDir.getVmDirPath(this.id)
+    const templates = getTemplatePaths(this.templateDir)
+    const replacements = {
+      MEMORY: String(this.params.memory),
+      NAME: this.params.name,
+      PUBLIC_KEY: this.params.sshPublicKey.trim(),
+      TS_AUTH_KEY: this.params.tailscaleAuthKey.trim(),
+      USER: this.params.user.trim(),
+      VCPUS: String(this.params.vcpu),
+      VM_DIR: vmDir,
+    }
+
+    await writeFile(
+      await this.dataDir.getVmUserDataPath(this.id),
+      renderTemplate(await readFile(templates.userDataTemplatePath, "utf8"), replacements),
+    )
+    await writeFile(
+      await this.dataDir.getVmMetaDataPath(this.id),
+      renderTemplate(await readFile(templates.metaDataTemplatePath, "utf8"), replacements),
+    )
+    await writeFile(
+      await this.dataDir.getVmNetworkConfigPath(this.id),
+      await readFile(templates.networkConfigTemplatePath, "utf8"),
+    )
+    await writeFile(
+      await this.dataDir.getVmXmlPath(this.id),
+      renderTemplate(await readFile(templates.vmXmlTemplatePath, "utf8"), replacements),
+    )
+
+    await this.createLinkedDisk(baseImagePath, vmDir)
+    await this.createSeedIso(vmDir)
+
+    const metadata: VmMetadata = {
+      id: this.id,
+      name: this.params.name,
+      baseImageId: this.params.baseImageId,
+      baseImageName: baseImageMetadata.name,
+      memory: this.params.memory,
+      vcpu: this.params.vcpu,
+      user: this.params.user,
+    }
+
+    await this.dataDir.writeVmMetadata(this.id, metadata)
+    await this.dataDir.removeVmRequest(this.id)
+    this.status = "stopped"
+  }
+
+  private async createLinkedDisk(baseImagePath: string, vmDir: string): Promise<void> {
+    const relativeBackingPath = relative(vmDir, baseImagePath)
+
+    runCommand(
+      [
+        "qemu-img",
+        "create",
+        "-f",
+        "qcow2",
+        "-F",
+        "qcow2",
+        "-b",
+        relativeBackingPath,
+        await this.dataDir.getVmDiskPath(this.id),
+      ],
+      {
+        cwd: vmDir,
+        errorPrefix: "qemu-img create failed",
+      },
+    )
+  }
+
+  private async createSeedIso(vmDir: string): Promise<void> {
+    runCommand(
+      [
+        "cloud-localds",
+        `--network-config=${await this.dataDir.getVmNetworkConfigPath(this.id)}`,
+        await this.dataDir.getVmSeedIsoPath(this.id),
+        await this.dataDir.getVmUserDataPath(this.id),
+        await this.dataDir.getVmMetaDataPath(this.id),
+      ],
+      {
+        cwd: vmDir,
+        errorPrefix: "cloud-localds failed",
+      },
+    )
+  }
+
+  private toRequest(): VmRequest {
+    return {
+      name: this.params.name,
+      baseImageId: this.params.baseImageId,
+      user: this.params.user,
+      sshPublicKey: this.params.sshPublicKey,
+      tailscaleAuthKey: this.params.tailscaleAuthKey,
+      memory: this.params.memory,
+      vcpu: this.params.vcpu,
+    }
+  }
+}
+
+function getTemplatePaths(templateDir: string) {
+  return {
+    userDataTemplatePath: join(templateDir, "user-data.yml"),
+    metaDataTemplatePath: join(templateDir, "meta-data.yml"),
+    networkConfigTemplatePath: join(templateDir, "network-config.yml"),
+    vmXmlTemplatePath: join(templateDir, "vm.xml"),
+  }
+}
+
+function renderTemplate(template: string, replacements: Record<string, string>): string {
+  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, key: string) => {
+    const replacement = replacements[key]
+
+    if (replacement === undefined) {
+      throw new Error(`No replacement found for template token {{${key}}}`)
+    }
+
+    return replacement
+  })
+}

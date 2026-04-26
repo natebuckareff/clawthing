@@ -1,7 +1,7 @@
 import { Api } from "./api"
 import { CreateImageParams } from "./create-image"
 import { ImageInfo } from "./image"
-import { VmInfo } from "./vm"
+import { CreateVmParams, VmInfo } from "./vm"
 
 interface ApiSuccess<T> {
   data: T
@@ -22,6 +22,10 @@ export class ApiClient implements Api {
 
   async listImages(): Promise<ImageInfo[]> {
     return this.post<ImageInfo[]>("/api/list-images", {})
+  }
+
+  async createVm(params: CreateVmParams): Promise<VmInfo> {
+    return this.post<VmInfo>("/api/create-vm", params)
   }
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {

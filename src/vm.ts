@@ -2,9 +2,46 @@ export interface VmInfo {
   id: string
   name: string
   status: VmStatus
+  baseImageId: string
   baseImageName: string
+  memory: number
+  vcpu: number
+  error?: string
+}
+
+export interface VmRequest {
+  name: string
+  baseImageId: string
+  user: string
+  sshPublicKey: string
+  tailscaleAuthKey: string
   memory: number
   vcpu: number
 }
 
-export type VmStatus = "stopped" | "running"
+export interface VmMetadata {
+  id: string
+  name: string
+  baseImageId: string
+  baseImageName: string
+  memory: number
+  vcpu: number
+  user: string
+}
+
+export interface CreateVmParams {
+  name: string
+  baseImageId: string
+  user: string
+  sshPublicKey: string
+  tailscaleAuthKey: string
+  memory: number
+  vcpu: number
+}
+
+export type VmStatus =
+  | "creating"
+  | "create-fail"
+  | "create-interrupted"
+  | "stopped"
+  | "running"

@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { ImageMetadata, ImageRequest } from "./image"
+import { VmMetadata, VmRequest } from "./vm"
 
 /*
 data directory structure:
@@ -9,13 +10,14 @@ $DATA_DIR/images/{id}/request.json          # create-image request for active/in
 $DATA_DIR/images/{id}/meta.json             # metadata for the completed image
 $DATA_DIR/images/{id}/image.qcow2           # downloaded base disk image
 $DATA_DIR/images/{id}/image.qcow2.download  # downloaded base disk image
-$DATA_DIR/vms/{id}/vm.json                  # config data for the vm
-$DATA_DIR/vms/{id}/vm.xml                   # libvirt config file, derived from vm.json
+$DATA_DIR/vms/{id}/request.json             # create-vm request for active/interrupted builds
+$DATA_DIR/vms/{id}/meta.json                # metadata for the completed vm
+$DATA_DIR/vms/{id}/vm.xml                   # libvirt config file
 $DATA_DIR/vms/{id}/disk.qcow2               # bootable disk linked to a base image in images
 $DATA_DIR/vms/{id}/seed.iso                 # cloud-init seed iso
-$DATA_DIR/vms/{id}/network-config           # cloud-init derived from vm.json
-$DATA_DIR/vms/{id}/meta-data                # cloud-init derived from vm.json
-$DATA_DIR/vms/{id}/user-data                # cloud-init derived from vm.json
+$DATA_DIR/vms/{id}/network-config           # rendered cloud-init network-config
+$DATA_DIR/vms/{id}/meta-data                # rendered cloud-init meta-data
+$DATA_DIR/vms/{id}/user-data                # rendered cloud-init user-data
 */
 
 export class DataDir {
@@ -95,7 +97,86 @@ export class DataDir {
 
   async getVmDirPath(id: string): Promise<string> {
     await this.setup()
-    return join(this.vmsPath(), id)
+    return this.vmDirPath(id)
+  }
+
+  async listVms(): Promise<string[]> {
+    await this.setup()
+    const entries = await readdir(this.vmsPath(), { withFileTypes: true })
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
+  }
+
+  async readVmRequest(id: string): Promise<VmRequest | undefined> {
+    await this.setup()
+    return this.readJsonFile<VmRequest>(this.vmRequestPath(id))
+  }
+
+  async writeVmRequest(id: string, request: VmRequest): Promise<void> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    await writeFile(this.vmRequestPath(id), `${JSON.stringify(request, null, 2)}\n`)
+  }
+
+  async removeVmRequest(id: string): Promise<void> {
+    await this.setup()
+
+    try {
+      await unlink(this.vmRequestPath(id))
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+      if (code === "ENOENT") {
+        return
+      }
+
+      throw error
+    }
+  }
+
+  async readVmMetadata(id: string): Promise<VmMetadata | undefined> {
+    await this.setup()
+    return this.readJsonFile<VmMetadata>(this.vmMetadataPath(id))
+  }
+
+  async writeVmMetadata(id: string, metadata: VmMetadata): Promise<void> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    await writeFile(this.vmMetadataPath(id), `${JSON.stringify(metadata, null, 2)}\n`)
+  }
+
+  async getVmDiskPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmDiskPath(id)
+  }
+
+  async getVmSeedIsoPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmSeedIsoPath(id)
+  }
+
+  async getVmXmlPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmXmlPath(id)
+  }
+
+  async getVmUserDataPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmUserDataPath(id)
+  }
+
+  async getVmMetaDataPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmMetaDataPath(id)
+  }
+
+  async getVmNetworkConfigPath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.vmDirPath(id), { recursive: true })
+    return this.vmNetworkConfigPath(id)
   }
 
   private async setup(): Promise<void> {
@@ -134,6 +215,42 @@ export class DataDir {
 
   private imagePath(id: string): string {
     return join(this.imageDirPath(id), "image.qcow2")
+  }
+
+  private vmDirPath(id: string): string {
+    return join(this.vmsPath(), id)
+  }
+
+  private vmRequestPath(id: string): string {
+    return join(this.vmDirPath(id), "request.json")
+  }
+
+  private vmMetadataPath(id: string): string {
+    return join(this.vmDirPath(id), "meta.json")
+  }
+
+  private vmDiskPath(id: string): string {
+    return join(this.vmDirPath(id), "disk.qcow2")
+  }
+
+  private vmSeedIsoPath(id: string): string {
+    return join(this.vmDirPath(id), "seed.iso")
+  }
+
+  private vmXmlPath(id: string): string {
+    return join(this.vmDirPath(id), "vm.xml")
+  }
+
+  private vmUserDataPath(id: string): string {
+    return join(this.vmDirPath(id), "user-data")
+  }
+
+  private vmMetaDataPath(id: string): string {
+    return join(this.vmDirPath(id), "meta-data")
+  }
+
+  private vmNetworkConfigPath(id: string): string {
+    return join(this.vmDirPath(id), "network-config")
   }
 
   private async readJsonFile<T>(path: string): Promise<T | undefined> {
