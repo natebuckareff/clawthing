@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises"
 import { basename, extname, join, relative, resolve } from "node:path"
 import { homedir } from "node:os"
+import { VmHostApiClient, type DeployArtifacts } from "./client"
 
 const DEFAULT_OUTPUT_DIR = "build"
 const DEFAULT_TEMPLATE_DIR = "templates"
@@ -9,7 +10,7 @@ const DEFAULT_REMOTE_ROOT = "/srv/vms"
 
 type Command = "build" | "deploy"
 
-type BuildArgs = {
+interface BuildArgs {
   instance: string
   user: string
   sshPublicKey: string
@@ -20,31 +21,12 @@ type BuildArgs = {
   remoteRoot: string
 }
 
-type DeployArgs = {
+interface DeployArgs {
   instance: string
   server: string
   outputDir: string
   remoteRoot: string
   dryRun: boolean
-}
-
-type DeployArtifacts = {
-  instance: string
-  localVmDir: string
-  localVmXmlPath: string
-  localDiskPath: string
-  localSeedIsoPath: string
-  localBaseImagePath: string
-  remoteRoot: string
-}
-
-type VmHostApiClient = {
-  ensureVmDirectory(artifacts: DeployArtifacts): Promise<void>
-  vmExists(instance: string): Promise<boolean>
-  baseImageExists(baseImageName: string, remoteRoot: string): Promise<boolean>
-  uploadBaseImage(artifacts: DeployArtifacts): Promise<void>
-  uploadVmArtifacts(artifacts: DeployArtifacts): Promise<void>
-  defineAndStartVm(artifacts: DeployArtifacts): Promise<void>
 }
 
 async function main() {
@@ -146,12 +128,12 @@ async function deployInstance(args: DeployArgs) {
     localBaseImagePath: baseImagePath,
     remoteRoot,
   }
-  const api = createMockVmHostApiClient(args.server, args.dryRun)
+  const api = new VmHostApiClient(args.server, args.dryRun)
 
   console.log(`${args.dryRun ? "Planning" : "Calling"} deploy API for ${args.server}`)
 
   if (args.dryRun) {
-    printDryRunSummary(args.server, artifacts)
+    api.printDryRunSummary(artifacts)
     return
   }
 
@@ -573,87 +555,6 @@ function runCommand(
   }
 
   return result
-}
-
-function createMockVmHostApiClient(target: string, dryRun: boolean): VmHostApiClient {
-  return {
-    async ensureVmDirectory(artifacts) {
-      logMockApiCall(target, "ensureVmDirectory", {
-        instance: artifacts.instance,
-        remoteRoot: artifacts.remoteRoot,
-      }, dryRun)
-    },
-    async vmExists(instance) {
-      logMockApiCall(target, "vmExists", { instance }, dryRun)
-      return false
-    },
-    async baseImageExists(baseImageName, remoteRoot) {
-      logMockApiCall(target, "baseImageExists", { baseImageName, remoteRoot }, dryRun)
-      return false
-    },
-    async uploadBaseImage(artifacts) {
-      logMockApiCall(target, "uploadBaseImage", {
-        instance: artifacts.instance,
-        localBaseImagePath: artifacts.localBaseImagePath,
-        remoteRoot: artifacts.remoteRoot,
-      }, dryRun)
-    },
-    async uploadVmArtifacts(artifacts) {
-      logMockApiCall(target, "uploadVmArtifacts", {
-        instance: artifacts.instance,
-        localVmDir: artifacts.localVmDir,
-        localVmXmlPath: artifacts.localVmXmlPath,
-        localDiskPath: artifacts.localDiskPath,
-        localSeedIsoPath: artifacts.localSeedIsoPath,
-      }, dryRun)
-    },
-    async defineAndStartVm(artifacts) {
-      logMockApiCall(target, "defineAndStartVm", {
-        instance: artifacts.instance,
-        localVmXmlPath: artifacts.localVmXmlPath,
-      }, dryRun)
-    },
-  }
-}
-
-function logMockApiCall(target: string, action: string, payload: Record<string, string>, dryRun: boolean) {
-  const prefix = dryRun ? "[dry-run]" : "[mock-api]"
-  console.log(`${prefix} ${target} ${action}`)
-
-  for (const [key, value] of Object.entries(payload)) {
-    console.log(`  ${key}: ${value}`)
-  }
-}
-
-function printDryRunSummary(target: string, artifacts: DeployArtifacts) {
-  console.log("Planned deploy API calls:")
-  logMockApiCall(target, "ensureVmDirectory", {
-    instance: artifacts.instance,
-    remoteRoot: artifacts.remoteRoot,
-  }, true)
-  logMockApiCall(target, "vmExists", {
-    instance: artifacts.instance,
-  }, true)
-  logMockApiCall(target, "baseImageExists", {
-    baseImageName: basename(artifacts.localBaseImagePath),
-    remoteRoot: artifacts.remoteRoot,
-  }, true)
-  logMockApiCall(target, "uploadBaseImage", {
-    instance: artifacts.instance,
-    localBaseImagePath: artifacts.localBaseImagePath,
-    remoteRoot: artifacts.remoteRoot,
-  }, true)
-  logMockApiCall(target, "uploadVmArtifacts", {
-    instance: artifacts.instance,
-    localVmDir: artifacts.localVmDir,
-    localVmXmlPath: artifacts.localVmXmlPath,
-    localDiskPath: artifacts.localDiskPath,
-    localSeedIsoPath: artifacts.localSeedIsoPath,
-  }, true)
-  logMockApiCall(target, "defineAndStartVm", {
-    instance: artifacts.instance,
-    localVmXmlPath: artifacts.localVmXmlPath,
-  }, true)
 }
 
 async function unlinkIfPresent(path: string) {
