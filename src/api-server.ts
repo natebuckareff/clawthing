@@ -66,6 +66,7 @@ export class ApiServer implements Api {
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
     await this.setup()
+    await this.validateCreateImageParams(params)
 
     const createImage = new CreateImage(this.dataDir, params)
     const info = await createImage.getInfo()
@@ -172,6 +173,17 @@ export class ApiServer implements Api {
     const existingVm = (await this.listVms()).find((vm) => vm.name === input.name)
     if (existingVm) {
       throw new Error(`VM name already exists: ${input.name}`)
+    }
+  }
+
+  private async validateCreateImageParams(params: CreateImageParams): Promise<void> {
+    if (params.name.trim().length === 0) {
+      throw new Error("Image name is required")
+    }
+
+    const existingImage = (await this.listImages()).find((image) => image.name === params.name)
+    if (existingImage) {
+      throw new Error(`Image name already exists: ${params.name}`)
     }
   }
 
