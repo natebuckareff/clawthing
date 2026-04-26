@@ -1,40 +1,66 @@
+import { Api } from "./api"
+import { CreateImage, CreateImageParams } from "./create-image"
+import { DataDir } from "./data-dir"
+import { ImageInfo } from "./image"
+import { LoadImage } from "./load-image"
+import { VmInfo } from "./vm"
+
 export class ApiServer implements Api {
   private isSetup: boolean
-  private dataDir: DataDir
-  private vms: VmInfo[]
-  private images: Map<string, CreateImage | LoadImage>
+  private readonly dataDir: DataDir
+  private readonly vms: VmInfo[]
+  private readonly images: Map<string, CreateImage | LoadImage>
 
-  constructor() {
+  constructor(dataDirPath = "data") {
     this.isSetup = false
+    this.dataDir = new DataDir(dataDirPath)
+    this.vms = []
+    this.images = new Map()
   }
 
   async listVms(): Promise<VmInfo[]> {
+    await this.setup()
     return this.vms
   }
 
   async listImages(): Promise<ImageInfo[]> {
-    const images = []
-    for (const image of self.images.values()) {
-      images.push(await image.getInfo())
+    await this.setup()
+
+    const images: ImageInfo[] = []
+    for (const [id, image] of this.images.entries()) {
+      const completed = image instanceof CreateImage ? await image.complete() : undefined
+      const resolvedImage = completed ?? image
+      if (completed) {
+        this.images.set(id, completed)
+      }
+      images.push(await resolvedImage.getInfo())
     }
-    images.sort((a, b) => a.name < b.name)
+
+    images.sort((a, b) => a.name.localeCompare(b.name))
     return images
   }
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
-    const createImage = new CreateImage(this.filesystem, params)
+    await this.setup()
+
+    const createImage = new CreateImage(this.dataDir, params)
     const info = await createImage.getInfo()
-    self.images.set(info.id, createImage)
+    this.images.set(info.id, createImage)
     await createImage.start()
-    return info
+    return createImage.getInfo()
   }
 
-  private setup(): Promise<void> {
-    // TODO: will do vms later
-
-    for (const id of await self.dataDir.listImages()) {
-      const loadImage = new LoadImage(self.dataDir, id)
-      this.images.set(id, loadImage)
+  private async setup(): Promise<void> {
+    if (this.isSetup) {
+      return
     }
+
+    for (const id of await this.dataDir.listImages()) {
+      const loadImage = new LoadImage(this.dataDir, id)
+      const activeImage = await loadImage.retryDownload()
+      this.images.set(id, activeImage ?? loadImage)
+    }
+
+    this.isSetup = true
   }
 }

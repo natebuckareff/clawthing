@@ -1,37 +1,75 @@
-
-export interface LoadImageParams {
-  info: ImageInfo
-}
+import { CreateImage } from "./create-image"
+import { DataDir } from "./data-dir"
+import { ImageInfo, ImageMetadata } from "./image"
 
 export class LoadImage {
-  private metadata?: ImageMetadata // initially not loaded
+  private metadata?: ImageMetadata
 
-  constructor(private dataDir: DataDir, public readonly id: string) {}
+  constructor(
+    private readonly dataDir: DataDir,
+    public readonly id: string,
+  ) {}
 
   async getInfo(): Promise<ImageInfo> {
-    // TODO:
-    // if there is a .download file in the image dir, status is `download-interrupted`
-    // this is signalled if getMetadata() retrurns undefined
-    throw Error('todo')
+    const metadata = await this.getMetadata()
+
+    if (metadata) {
+      return {
+        id: metadata.id,
+        name: metadata.name,
+        url: metadata.url,
+        status: "ready",
+        hash: metadata.hash,
+        progress: 1,
+      }
+    }
+
+    const request = await this.dataDir.readImageRequest(this.id)
+    const hasDownload = await this.dataDir.hasImageDownload(this.id)
+
+    if (hasDownload) {
+      return {
+        id: this.id,
+        name: request?.name ?? this.id,
+        url: request?.url ?? "",
+        status: "download-interrupted",
+        progress: 0,
+        error: request ? undefined : "Interrupted download is missing request.json",
+      }
+    }
+
+    return {
+      id: this.id,
+      name: request?.name ?? this.id,
+      url: request?.url ?? "",
+      status: "download-fail",
+      progress: 0,
+      error: "Image directory is incomplete",
+    }
   }
 
   async retryDownload(): Promise<CreateImage | undefined> {
-    // if there is a .download file in the image dir, retry the download
     const info = await this.getInfo()
-    if (info.progress != 'download-interrupted') {
-      return
+    if (info.status !== "download-interrupted") {
+      return undefined
     }
-    return new CreateImage(this.dataDir, {
-      // TODO: fill in from info
-    })
+
+    const request = await this.dataDir.readImageRequest(this.id)
+    if (!request) {
+      return undefined
+    }
+
+    const createImage = new CreateImage(this.dataDir, request, { id: this.id })
+    await createImage.start()
+    return createImage
   }
 
   private async getMetadata(): Promise<ImageMetadata | undefined> {
     if (this.metadata) {
       return this.metadata
     }
-    // TODO: use dataDir to read metadata
-    // if a download was interrupted, there will be no metadata, so returns undefined 
-    throw Error('todo')
+
+    this.metadata = await this.dataDir.readImageMetadata(this.id)
+    return this.metadata
   }
 }

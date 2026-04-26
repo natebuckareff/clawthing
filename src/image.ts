@@ -1,6 +1,11 @@
+export interface ImageRequest {
+  name: string,
+  url: string,
+}
+
 export interface ImageInfo {
   id: string,         // uuid
-  name: string,       // normalized name
+  name: string,       // user-provided name
   url: string,        // original url
   status: ImageStatus
   hash?: string,      // hex-encoded sha256 hash, available after download
@@ -21,4 +26,3 @@ export type ImageStatus =
   | 'download-fail'         // error mid-download
   | 'download-interrupted'  // server crashed in middle of a download
   | 'ready'                 // no .download files in a healthy image dir
-

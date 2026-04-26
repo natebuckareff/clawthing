@@ -1,9 +1,12 @@
-import { ImageMetadata } from './image'
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import { ImageMetadata, ImageRequest } from "./image"
 
 /*
 data directory structure:
 
-$DATA_DIR/images/{id}/meta.json             # metadata for the image
+$DATA_DIR/images/{id}/request.json          # create-image request for active/interrupted downloads
+$DATA_DIR/images/{id}/meta.json             # metadata for the completed image
 $DATA_DIR/images/{id}/image.qcow2           # downloaded base disk image
 $DATA_DIR/images/{id}/image.qcow2.download  # downloaded base disk image
 $DATA_DIR/vms/{id}/vm.json                  # config data for the vm
@@ -19,49 +22,143 @@ export class DataDir {
   private isSetup: boolean
 
   constructor(public readonly path: string) {
-    this.isSetup = false;
+    this.isSetup = false
   }
 
-  async listImages(): Primise<string[]> {
-    this.setup()
-    // TODO: return list of all image ids in `{dataDir}/images`
+  async listImages(): Promise<string[]> {
+    await this.setup()
+    const entries = await readdir(this.imagesPath(), { withFileTypes: true })
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
   }
 
   async readImageMetadata(id: string): Promise<ImageMetadata | undefined> {
-    this.setup()
-    // TODO: reads image metadata from `{dataDir}/images/{id}/meta.json`
-    // returns undefined if doesn't exist
-    throw Error('todo')
+    await this.setup()
+    return this.readJsonFile<ImageMetadata>(this.imageMetadataPath(id))
   }
 
   async writeImageMetadata(id: string, metadata: ImageMetadata): Promise<void> {
-    this.setup()
-    // TODO: writes image metadata to `{dataDir}/images/{id}/meta.json`
-    throw Error('todo')
+    await this.setup()
+    await mkdir(this.imageDirPath(id), { recursive: true })
+    await writeFile(this.imageMetadataPath(id), `${JSON.stringify(metadata, null, 2)}\n`)
+  }
+
+  async readImageRequest(id: string): Promise<ImageRequest | undefined> {
+    await this.setup()
+    return this.readJsonFile<ImageRequest>(this.imageRequestPath(id))
+  }
+
+  async writeImageRequest(id: string, request: ImageRequest): Promise<void> {
+    await this.setup()
+    await mkdir(this.imageDirPath(id), { recursive: true })
+    await writeFile(this.imageRequestPath(id), `${JSON.stringify(request, null, 2)}\n`)
+  }
+
+  async removeImageRequest(id: string): Promise<void> {
+    await this.setup()
+
+    try {
+      await unlink(this.imageRequestPath(id))
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+      if (code === "ENOENT") {
+        return
+      }
+
+      throw error
+    }
   }
 
   async getImageDownloadPath(id: string): Promise<string> {
-    this.setup()
-    // TODO: return partial download file `{dataDir}/images/{id}/image.qcow2.download`
-    // once the download is finished this is atomically renamed to drop `.download` ext
-    throw Error('todo')
+    await this.setup()
+    await mkdir(this.imageDirPath(id), { recursive: true })
+    return this.imageDownloadPath(id)
+  }
+
+  async getImagePath(id: string): Promise<string> {
+    await this.setup()
+    await mkdir(this.imageDirPath(id), { recursive: true })
+    return this.imagePath(id)
+  }
+
+  async hasImageDownload(id: string): Promise<boolean> {
+    await this.setup()
+    return pathExists(this.imageDownloadPath(id))
   }
 
   async completeImageDownload(id: string): Promise<string> {
-    this.setup()
-    // TODO: renames `{id}/image.qcow2.download` -> `{id}/image.qcow2`
-    throw Error('todo')
+    await this.setup()
+    const downloadPath = this.imageDownloadPath(id)
+    const imagePath = this.imagePath(id)
+    await rename(downloadPath, imagePath)
+    return imagePath
   }
 
-  // TODO: will do vm stuff later
+  async getVmDirPath(id: string): Promise<string> {
+    await this.setup()
+    return join(this.vmsPath(), id)
+  }
 
   private async setup(): Promise<void> {
     if (this.isSetup) {
       return
     }
-    // TODO
-    // - check that `this.path` exists and is a directory, and contains `images` and `vms` dirs
-    // - otherwise create it, with those two dirs empty
+
+    await mkdir(this.imagesPath(), { recursive: true })
+    await mkdir(this.vmsPath(), { recursive: true })
     this.isSetup = true
+  }
+
+  private imagesPath(): string {
+    return join(this.path, "images")
+  }
+
+  private vmsPath(): string {
+    return join(this.path, "vms")
+  }
+
+  private imageDirPath(id: string): string {
+    return join(this.imagesPath(), id)
+  }
+
+  private imageRequestPath(id: string): string {
+    return join(this.imageDirPath(id), "request.json")
+  }
+
+  private imageMetadataPath(id: string): string {
+    return join(this.imageDirPath(id), "meta.json")
+  }
+
+  private imageDownloadPath(id: string): string {
+    return join(this.imageDirPath(id), "image.qcow2.download")
+  }
+
+  private imagePath(id: string): string {
+    return join(this.imageDirPath(id), "image.qcow2")
+  }
+
+  private async readJsonFile<T>(path: string): Promise<T | undefined> {
+    try {
+      return JSON.parse(await readFile(path, "utf8")) as T
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+      if (code === "ENOENT") {
+        return undefined
+      }
+      throw error
+    }
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+    if (code === "ENOENT") {
+      return false
+    }
+
+    throw error
   }
 }
