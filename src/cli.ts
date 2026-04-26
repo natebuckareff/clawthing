@@ -75,6 +75,20 @@ async function main() {
     return
   }
 
+  if (resource === "vms" && action === "start") {
+    const id = required(flags, "--id")
+    await api.startVm(id)
+    console.log(`started ${id}`)
+    return
+  }
+
+  if (resource === "vms" && action === "stop") {
+    const id = required(flags, "--id")
+    await api.stopVm(id)
+    console.log(`stopped ${id}`)
+    return
+  }
+
   throw new Error(usage())
 }
 
@@ -115,12 +129,14 @@ function required(flags: Map<string, string>, name: string): string {
 function usage(): string {
   return [
     "Usage:",
-    "  bun src/cli-v2.ts server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]",
-    "  bun src/cli-v2.ts images list [--server http://127.0.0.1:1234]",
-    "  bun src/cli-v2.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
-    "  bun src/cli-v2.ts vms list [--server http://127.0.0.1:1234]",
-    "  bun src/cli-v2.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
-    "  bun src/cli-v2.ts vms remove --id <vm-id> [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]",
+    "  bun src/cli.ts images list [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms list [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms start --id <vm-id> [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms stop --id <vm-id> [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms remove --id <vm-id> [--server http://127.0.0.1:1234]",
   ].join("\n")
 }
 

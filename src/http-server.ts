@@ -77,6 +77,32 @@ export class HttpServer {
         return jsonResponse(200, { data: null })
       }
 
+      if (pathname === "/api/start-vm") {
+        if (!isRemoveVmBody(body)) {
+          return jsonResponse(400, {
+            error: {
+              message: "Invalid start-vm request body",
+            },
+          })
+        }
+
+        await this.api.startVm(body.id)
+        return jsonResponse(200, { data: null })
+      }
+
+      if (pathname === "/api/stop-vm") {
+        if (!isRemoveVmBody(body)) {
+          return jsonResponse(400, {
+            error: {
+              message: "Invalid stop-vm request body",
+            },
+          })
+        }
+
+        await this.api.stopVm(body.id)
+        return jsonResponse(200, { data: null })
+      }
+
       if (pathname === "/api/create-image") {
         if (!isCreateImageBody(body)) {
           return jsonResponse(400, {

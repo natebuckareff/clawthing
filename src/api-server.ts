@@ -75,20 +75,20 @@ export class ApiServer implements Api {
     return createVm.getInfo()
   }
 
+  async startVm(id: string): Promise<void> {
+    const loadVm = await this.requireLoadedVm(id)
+    await loadVm.start()
+  }
+
+  async stopVm(id: string): Promise<void> {
+    const loadVm = await this.requireLoadedVm(id)
+    await loadVm.stop()
+  }
+
   async removeVm(id: string): Promise<void> {
     await this.setup()
 
-    const vm = this.vms.get(id)
-    if (!vm) {
-      throw new Error(`VM not found: ${id}`)
-    }
-
-    const info = await vm.getInfo()
-    if (info.status === "creating") {
-      throw new Error(`Cannot remove VM while creation is in progress: ${info.name}`)
-    }
-
-    const loadVm = new LoadVm(this.dataDir, id)
+    const loadVm = await this.requireLoadedVm(id)
     await loadVm.remove()
     this.vms.delete(id)
   }
@@ -151,5 +151,23 @@ export class ApiServer implements Api {
     if (baseImage.status !== "ready") {
       throw new Error(`Base image is not ready: ${baseImage.name} (${baseImage.status})`)
     }
+  }
+
+  private async requireLoadedVm(id: string): Promise<LoadVm> {
+    await this.setup()
+
+    const vm = this.vms.get(id)
+    if (!vm) {
+      throw new Error(`VM not found: ${id}`)
+    }
+
+    const info = await vm.getInfo()
+    if (info.status === "creating") {
+      throw new Error(`Cannot operate on VM while creation is in progress: ${info.name}`)
+    }
+
+    const loadVm = new LoadVm(this.dataDir, id)
+    this.vms.set(id, loadVm)
+    return loadVm
   }
 }

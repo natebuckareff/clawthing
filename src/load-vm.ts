@@ -105,6 +105,42 @@ export class LoadVm {
     await this.dataDir.removeVmDir(this.id)
   }
 
+  async start(): Promise<void> {
+    const domainName = await this.getDomainName()
+    if (!domainName) {
+      throw new Error(`VM is missing a domain name: ${this.id}`)
+    }
+
+    const domainState = this.libvirt.getState(domainName)
+    if (!domainState) {
+      throw new Error(`Libvirt domain not found: ${domainName}`)
+    }
+
+    if (domainState.vmStatus === "running") {
+      return
+    }
+
+    this.libvirt.start(domainName)
+  }
+
+  async stop(): Promise<void> {
+    const domainName = await this.getDomainName()
+    if (!domainName) {
+      throw new Error(`VM is missing a domain name: ${this.id}`)
+    }
+
+    const domainState = this.libvirt.getState(domainName)
+    if (!domainState) {
+      throw new Error(`Libvirt domain not found: ${domainName}`)
+    }
+
+    if (domainState.vmStatus !== "running") {
+      return
+    }
+
+    this.libvirt.destroy(domainName)
+  }
+
   private async getMetadata(): Promise<VmMetadata | undefined> {
     if (this.metadata) {
       return this.metadata
@@ -116,5 +152,15 @@ export class LoadVm {
 
   private getRequest(): Promise<VmRequest | undefined> {
     return this.dataDir.readVmRequest(this.id)
+  }
+
+  private async getDomainName(): Promise<string | undefined> {
+    const metadata = await this.getMetadata()
+    if (metadata) {
+      return metadata.name
+    }
+
+    const request = await this.getRequest()
+    return request?.name
   }
 }
