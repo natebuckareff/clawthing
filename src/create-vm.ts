@@ -84,6 +84,7 @@ export class CreateVm {
     const vmDir = await this.dataDir.getVmDirPath(this.id)
     const templates = getTemplatePaths(this.templateDir)
     const replacements = {
+      ID: this.id,
       MEMORY: String(this.params.memory),
       NAME: this.params.name,
       PUBLIC_KEY: this.params.sshPublicKey.trim(),
