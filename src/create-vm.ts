@@ -5,7 +5,15 @@ import { generateId, type Id } from "./id"
 import { LibvirtClient } from "./libvirt-client"
 import { TailscaleClient } from "./tailscale-client"
 import { runCommand } from "./util"
-import type { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
+import {
+  getVmHostname,
+  isVmCreateInProgress,
+  type CreateVmParams,
+  type VmInfo,
+  type VmMetadata,
+  type VmRequest,
+  type VmStatus,
+} from "./vm"
 import { LoadVm } from "./load-vm"
 
 interface CreateVmOptions {
@@ -33,7 +41,7 @@ export class CreateVm {
   ) {
     this.id = options.id ?? generateId()
     this.createdAt = params.createdAt ?? Date.now()
-    this.status = "creating"
+    this.status = "preparing"
     this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")
     this.libvirt = new LibvirtClient()
     this.tailscale = options.tailscale
@@ -71,7 +79,7 @@ export class CreateVm {
   }
 
   async complete(): Promise<LoadVm | undefined> {
-    if (this.status === "creating") {
+    if (isVmCreateInProgress(this.status)) {
       return undefined
     }
 
@@ -91,7 +99,9 @@ export class CreateVm {
     const baseImagePath = await this.dataDir.getImagePath(baseImageMetadata.id)
     const vmDir = await this.dataDir.getVmDirPath(this.id)
     const templates = getTemplatePaths(this.templateDir)
+    const hostname = getVmHostname(this.params.name, this.id)
     const replacements = {
+      HOSTNAME: hostname,
       ID: this.id,
       MEMORY: String(this.params.memory),
       NAME: this.params.name,
@@ -121,8 +131,13 @@ export class CreateVm {
 
     await this.createLinkedDisk(baseImagePath, vmDir)
     await this.createSeedIso(vmDir)
+
+    this.status = "creating"
     await this.ensureLibvirtNetwork()
     await this.defineAndStartVm()
+
+    this.status = "connecting"
+    const tailscaleDeviceId = (await this.tailscale.waitForDeviceByHostname(hostname)).id
 
     const metadata: VmMetadata = {
       id: this.id,
@@ -133,6 +148,7 @@ export class CreateVm {
       memory: this.params.memory,
       vcpu: this.params.vcpu,
       user: this.params.user,
+      tailscaleDeviceId,
     }
 
     await this.dataDir.writeVmMetadata(this.id, metadata)
@@ -208,7 +224,6 @@ export class CreateVm {
       this.libvirt.autostartNetwork(LIBVIRT_NETWORK_NAME)
     }
   }
-
   private toRequest(): VmRequest {
     return {
       name: this.params.name,

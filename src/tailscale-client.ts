@@ -41,6 +41,11 @@ interface TailscaleDevicesResponse {
   devices?: TailscaleDevice[]
 }
 
+interface DeviceWaiter {
+  resolve: (device: TailscaleDevice) => void
+  reject: (error: unknown) => void
+}
+
 export class TailscaleClient {
   private readonly clientId: string
   private readonly clientSecret: string
@@ -49,6 +54,8 @@ export class TailscaleClient {
   private readonly tags: string[]
   private readonly tokenUrl: string
   private cachedAccessToken?: CachedAccessToken
+  private readonly deviceWaiters: Map<string, DeviceWaiter[]>
+  private deviceWaitLoop?: Promise<void>
 
   constructor(options: TailscaleClientOptions) {
     this.clientId = options.clientId
@@ -57,6 +64,7 @@ export class TailscaleClient {
     this.authKeyExpirySeconds = options.authKeyExpirySeconds
     this.tags = options.tags
     this.tokenUrl = options.tokenUrl ?? "https://api.tailscale.com/api/v2/oauth/token"
+    this.deviceWaiters = new Map()
   }
 
   static fromConfig(config: TailscaleConfig): TailscaleClient {
@@ -101,7 +109,7 @@ export class TailscaleClient {
   }
 
   async listDevices(): Promise<TailscaleDevice[]> {
-    const accessToken = await this.getAccessToken("devices:read")
+    const accessToken = await this.getAccessToken("devices:core:read")
     const response = await fetch(`https://api.tailscale.com/api/v2/tailnet/${this.tailnet}/devices`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -127,6 +135,99 @@ export class TailscaleClient {
     const normalizedId = id.trim()
     const devices = await this.listDevices()
     return devices.find((device) => device.id === normalizedId)
+  }
+
+  async waitForDeviceByHostname(hostname: string): Promise<TailscaleDevice> {
+    const normalizedHostname = normalizeHostname(hostname)
+    const existingDevice = await this.findDeviceByHostname(normalizedHostname)
+    if (existingDevice) {
+      return existingDevice
+    }
+
+    return new Promise<TailscaleDevice>((resolve, reject) => {
+      const existingWaiters = this.deviceWaiters.get(normalizedHostname) ?? []
+      existingWaiters.push({ resolve, reject })
+      this.deviceWaiters.set(normalizedHostname, existingWaiters)
+      this.startDeviceWaitLoop()
+    })
+  }
+
+  async deleteDevice(id: string): Promise<void> {
+    const accessToken = await this.getAccessToken("devices:core", this.tags)
+    const normalizedId = id.trim()
+    const response = await fetch(`https://api.tailscale.com/api/v2/device/${normalizedId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (response.status === 404) {
+      return
+    }
+
+    if (!response.ok) {
+      throw new Error(`Tailscale delete device failed: ${response.status} ${await response.text()}`)
+    }
+  }
+
+  private startDeviceWaitLoop(): void {
+    if (this.deviceWaitLoop) {
+      return
+    }
+
+    this.deviceWaitLoop = this.runDeviceWaitLoop().finally(() => {
+      this.deviceWaitLoop = undefined
+      if (this.deviceWaiters.size > 0) {
+        this.startDeviceWaitLoop()
+      }
+    })
+  }
+
+  private async runDeviceWaitLoop(): Promise<void> {
+    while (this.deviceWaiters.size > 0) {
+      try {
+        const devices = await this.listDevices()
+        this.resolveDeviceWaiters(devices)
+      } catch (error: unknown) {
+        if (isRetryableDeviceWaitError(error)) {
+          await Bun.sleep(1000)
+          continue
+        }
+
+        this.rejectAllDeviceWaiters(error)
+        throw error
+      }
+
+      if (this.deviceWaiters.size > 0) {
+        await Bun.sleep(1000)
+      }
+    }
+  }
+
+  private resolveDeviceWaiters(devices: TailscaleDevice[]): void {
+    for (const device of devices) {
+      for (const candidate of getDeviceHostnameCandidates(device)) {
+        const waiters = this.deviceWaiters.get(candidate)
+        if (!waiters) {
+          continue
+        }
+
+        this.deviceWaiters.delete(candidate)
+        for (const waiter of waiters) {
+          waiter.resolve(device)
+        }
+      }
+    }
+  }
+
+  private rejectAllDeviceWaiters(error: unknown): void {
+    const waiters = Array.from(this.deviceWaiters.values()).flat()
+    this.deviceWaiters.clear()
+
+    for (const waiter of waiters) {
+      waiter.reject(error)
+    }
   }
 
   private async getAccessToken(scope: string, tags?: string[]): Promise<string> {
@@ -177,11 +278,26 @@ export class TailscaleClient {
 }
 
 function matchesHostname(device: TailscaleDevice, normalizedHostname: string): boolean {
-  const candidates = [
+  return getDeviceHostnameCandidates(device).includes(normalizedHostname)
+}
+
+function getDeviceHostnameCandidates(device: TailscaleDevice): string[] {
+  return [
     device.hostname,
     device.name,
     device.name?.split(".")[0],
   ]
+    .map((candidate) => candidate?.trim().toLowerCase())
+    .filter((candidate): candidate is string => Boolean(candidate))
+}
 
-  return candidates.some((candidate) => candidate?.trim().toLowerCase() === normalizedHostname)
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase()
+}
+
+function isRetryableDeviceWaitError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message.startsWith("Tailscale list devices failed:")
+    || error.message.startsWith("Tailscale OAuth failed:")
+  )
 }

@@ -8,7 +8,7 @@ import type { ImageInfo } from "./image"
 import { LoadImage } from "./load-image"
 import { LoadVm } from "./load-vm"
 import { TailscaleClient } from "./tailscale-client"
-import { DEFAULT_VM_USER, type CreateVmInput, type CreateVmParams, type VmInfo } from "./vm"
+import { DEFAULT_VM_USER, isVmCreateInProgress, type CreateVmInput, type CreateVmParams, type VmInfo } from "./vm"
 
 interface ApiServerOptions {
   dataDir: DataDir
@@ -258,7 +258,7 @@ export class ApiServer implements Api {
     }
 
     const info = await vm.getInfo()
-    if (info.status === "creating") {
+    if (isVmCreateInProgress(info.status)) {
       throw new Error(`Cannot operate on VM while creation is in progress: ${info.name}`)
     }
 

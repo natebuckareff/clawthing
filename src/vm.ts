@@ -1,4 +1,4 @@
-import type { Id } from "./id"
+import { formatCliId, type Id } from "./id"
 
 export const DEFAULT_VM_USER = "clawthing"
 
@@ -36,7 +36,7 @@ export interface VmMetadata {
   memory: number
   vcpu: number
   user: string
-  tailscaleDeviceId?: string
+  tailscaleDeviceId: string
 }
 
 export interface CreateVmParams {
@@ -60,8 +60,19 @@ export interface CreateVmInput {
 }
 
 export type VmStatus =
+  | "preparing"
   | "creating"
+  | "connecting" // TODO: not a fan of this; ideally, we have vm telemetry
   | "create-fail"
   | "create-interrupted"
+  | "stopping"
   | "stopped"
   | "running"
+
+export function getVmHostname(name: string, id: Id): string {
+  return `${name}-${formatCliId(id)}`
+}
+
+export function isVmCreateInProgress(status: VmStatus): boolean {
+  return status === "preparing" || status === "creating" || status === "connecting"
+}

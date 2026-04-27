@@ -69,8 +69,6 @@ async function main() {
       vcpu: flags.has("--vcpu") ? parseIntegerFlag(flags, "--vcpu") : DEFAULT_VM_VCPU,
     })
     console.log(`${formatCliId(vm.id)} ${vm.status} ${vm.name}`)
-    const completedVm = await waitForVm(api, vm.id)
-    console.log(`${formatCliId(completedVm.id)} ${completedVm.status} ${completedVm.name} ${completedVm.baseImageName}`)
     return
   }
 
@@ -182,26 +180,6 @@ function formatImageTable(images: ImageInfo[]): string {
 
   return table.render()
 }
-
-async function waitForVm(api: Api, id: string) {
-  while (true) {
-    const vm = (await api.listVms()).find((candidate) => candidate.id === id)
-    if (!vm) {
-      throw new Error(`VM not found after create: ${id}`)
-    }
-
-    if (vm.status === "stopped" || vm.status === "running") {
-      return vm
-    }
-
-    if (vm.status !== "creating") {
-      throw new Error(vm.error ?? `VM creation failed: ${vm.status}`)
-    }
-
-    await Bun.sleep(100)
-  }
-}
-
 
 function parseIntegerFlag(flags: Map<string, string>, name: string): number {
   const value = Number.parseInt(required(flags, name), 10)

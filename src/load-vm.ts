@@ -4,7 +4,6 @@ import type { Id } from "./id"
 import { LibvirtClient } from "./libvirt-client"
 import type { GuestInterfaceInfo } from "./libvirt-client"
 import { TailscaleClient } from "./tailscale-client"
-import type { TailscaleDevice } from "./tailscale-client"
 import type { VmInfo, VmMetadata, VmRequest } from "./vm"
 
 interface LoadVmOptions {
@@ -30,7 +29,6 @@ export class LoadVm {
     const diskUsageBytes = await this.dataDir.getVmDiskUsage(this.id)
 
     if (metadata) {
-      await this.maybePopulateTailscaleDeviceId(metadata)
       const domainState = this.libvirt.getState(metadata.name)
 
       if (!domainState) {
@@ -124,6 +122,10 @@ export class LoadVm {
       }
     }
 
+    if (metadata) {
+      await this.tailscale.deleteDevice(metadata.tailscaleDeviceId)
+    }
+
     await this.dataDir.removeVmDir(this.id)
   }
 
@@ -186,25 +188,6 @@ export class LoadVm {
     return request?.name
   }
 
-  private async maybePopulateTailscaleDeviceId(metadata: VmMetadata): Promise<void> {
-    if (metadata.tailscaleDeviceId) {
-      return
-    }
-
-    try {
-      const device = await this.tailscale.findDeviceByHostname(metadata.name)
-      if (!device) {
-        return
-      }
-
-      metadata.tailscaleDeviceId = device.id
-      await this.dataDir.writeVmMetadata(this.id, metadata)
-      this.metadata = metadata
-    } catch {
-      // Device lookup is best-effort so VM reads are not blocked on Tailscale API access.
-    }
-  }
-
   private async resolveAddress(metadata: VmMetadata, status: VmInfo["status"]): Promise<string | undefined> {
     if (status !== "running") {
       return undefined
@@ -215,24 +198,9 @@ export class LoadVm {
 
   private async getTailscaleAddress(metadata: VmMetadata, domainName: string): Promise<string | undefined> {
     try {
-      let device: TailscaleDevice | undefined
-
-      if (metadata.tailscaleDeviceId) {
-        device = await this.tailscale.findDeviceById(metadata.tailscaleDeviceId)
-      }
-
-      if (!device) {
-        device = await this.tailscale.findDeviceByHostname(metadata.name)
-      }
-
+      const device = await this.tailscale.findDeviceById(metadata.tailscaleDeviceId)
       if (!device) {
         return undefined
-      }
-
-      if (device.id !== metadata.tailscaleDeviceId) {
-        metadata.tailscaleDeviceId = device.id
-        await this.dataDir.writeVmMetadata(this.id, metadata)
-        this.metadata = metadata
       }
 
       const apiAddress = firstIpv4(device.addresses)

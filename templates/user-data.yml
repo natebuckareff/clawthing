@@ -1,6 +1,6 @@
 #cloud-config
-hostname: {{NAME}}
-fqdn: {{NAME}}.local
+hostname: {{HOSTNAME}}
+fqdn: {{HOSTNAME}}.local
 users:
   - name: {{USER}}
     groups: [sudo]
@@ -28,7 +28,7 @@ write_files:
 
       echo "Setting up tailscale"
       sh -c 'curl -fsSL https://tailscale.com/install.sh | sh'
-      tailscale up --auth-key={{TS_AUTH_KEY}} --hostname={{NAME}}
+      tailscale up --auth-key={{TS_AUTH_KEY}} --hostname={{HOSTNAME}}
       tailscale set --ssh
 
       echo "Setting up docker gpg key"
