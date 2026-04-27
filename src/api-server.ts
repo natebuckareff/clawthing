@@ -16,23 +16,75 @@ interface ApiServerOptions {
 }
 
 export class ApiServer implements Api {
-  private isSetup: boolean
+  private isInitializing: boolean
   private readonly dataDir: DataDir
   private readonly tailscale: TailscaleClient
   private readonly vms: IdMap<CreateVm | LoadVm>
   private readonly images: IdMap<CreateImage | LoadImage>
 
   constructor(options: ApiServerOptions) {
-    this.isSetup = false
+    this.isInitializing = false
     this.dataDir = options.dataDir
     this.tailscale = options.tailscale
     this.vms = new IdMap("VM")
     this.images = new IdMap("Image")
   }
 
-  async listVms(): Promise<VmInfo[]> {
-    await this.setup()
+  async initialize(): Promise<void> {
+    if (this.isInitializing) {
+      return
+    }
 
+    this.isInitializing = true
+    const startedAt = performance.now()
+    console.log("Initializing server")
+
+    try {
+      const imageIds = await this.dataDir.listImages()
+      console.log(`Loading ${imageIds.length} image${imageIds.length === 1 ? "" : "s"}...`)
+
+      let resumedImageCount = 0
+      for (const id of imageIds) {
+        const loadImage = new LoadImage(this.dataDir, id)
+        const activeImage = await loadImage.retryDownload()
+        if (activeImage) {
+          resumedImageCount += 1
+        }
+        this.images.set(id, activeImage ?? loadImage)
+      }
+
+      console.log(
+        `Loaded ${imageIds.length} image${imageIds.length === 1 ? "" : "s"}${resumedImageCount > 0 ? `, resumed ${resumedImageCount} download${resumedImageCount === 1 ? "" : "s"}` : ""}`,
+      )
+
+      const vmIds = await this.dataDir.listVms()
+      console.log(`Loading ${vmIds.length} VM${vmIds.length === 1 ? "" : "s"}...`)
+
+      let resumedVmCount = 0
+      for (const id of vmIds) {
+        const loadVm = new LoadVm(this.dataDir, id, { tailscale: this.tailscale })
+        const activeVm = await loadVm.retryCreate()
+        if (activeVm) {
+          resumedVmCount += 1
+        }
+        this.vms.set(id, activeVm ?? loadVm)
+      }
+
+      console.log(
+        `Loaded ${vmIds.length} VM${vmIds.length === 1 ? "" : "s"}${resumedVmCount > 0 ? `, resumed ${resumedVmCount} create${resumedVmCount === 1 ? "" : "s"}` : ""}`,
+      )
+
+      const durationMs = Math.round(performance.now() - startedAt)
+      console.log(`API server initialization complete in ${durationMs}ms`)
+    } catch (error: unknown) {
+      console.error(
+        `API server initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      throw error
+    }
+  }
+
+  async listVms(): Promise<VmInfo[]> {
     const vms: VmInfo[] = []
     for (const [id, vm] of this.vms.entries()) {
       const completed = vm instanceof CreateVm ? await vm.complete() : undefined
@@ -48,8 +100,6 @@ export class ApiServer implements Api {
   }
 
   async listImages(): Promise<ImageInfo[]> {
-    await this.setup()
-
     const images: ImageInfo[] = []
     for (const [id, image] of this.images.entries()) {
       const completed = image instanceof CreateImage ? await image.complete() : undefined
@@ -65,7 +115,6 @@ export class ApiServer implements Api {
   }
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
-    await this.setup()
     await this.validateCreateImageParams(params)
 
     const createImage = new CreateImage(this.dataDir, params)
@@ -76,7 +125,6 @@ export class ApiServer implements Api {
   }
 
   async removeImage(id: string): Promise<void> {
-    await this.setup()
     const resolvedId = this.images.resolve(id)
     const image = this.requireImage(resolvedId)
 
@@ -99,7 +147,6 @@ export class ApiServer implements Api {
   }
 
   async createVm(input: CreateVmInput): Promise<VmInfo> {
-    await this.setup()
     const normalizedInput = await this.normalizeCreateVmInput(input)
     const params = await this.resolveCreateVmParams(normalizedInput)
     await this.validateCreateVmParams(params)
@@ -122,31 +169,10 @@ export class ApiServer implements Api {
   }
 
   async removeVm(id: string): Promise<void> {
-    await this.setup()
     const resolvedId = this.vms.resolve(id)
     const loadVm = await this.requireLoadedVm(resolvedId)
     await loadVm.remove()
     this.vms.delete(resolvedId)
-  }
-
-  private async setup(): Promise<void> {
-    if (this.isSetup) {
-      return
-    }
-
-    for (const id of await this.dataDir.listImages()) {
-      const loadImage = new LoadImage(this.dataDir, id)
-      const activeImage = await loadImage.retryDownload()
-      this.images.set(id, activeImage ?? loadImage)
-    }
-
-    for (const id of await this.dataDir.listVms()) {
-      const loadVm = new LoadVm(this.dataDir, id, { tailscale: this.tailscale })
-      const activeVm = await loadVm.retryCreate()
-      this.vms.set(id, activeVm ?? loadVm)
-    }
-
-    this.isSetup = true
   }
 
   private async validateCreateVmInput(input: CreateVmInput): Promise<void> {
@@ -226,7 +252,6 @@ export class ApiServer implements Api {
   }
 
   private async requireLoadedVm(id: Id): Promise<LoadVm> {
-    await this.setup()
     const vm = this.vms.get(id)
     if (!vm) {
       throw new Error(`VM not found: ${id}`)

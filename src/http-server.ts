@@ -31,6 +31,7 @@ export class HttpServer {
       dataDir: new DataDir(dataDir),
       tailscale,
     })
+    await api.initialize()
 
     return new HttpServer(api, { ...options, dataDir })
   }
