@@ -2,6 +2,9 @@
   "name": "clawthing",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "bun build src/cli.ts --compile --outfile clawthing"
+  },
   "dependencies": {
     "pretty-bytes": "^7.1.0",
     "pretty-ms": "^9.3.0"
