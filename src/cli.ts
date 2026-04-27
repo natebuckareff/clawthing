@@ -1,62 +1,64 @@
-import { readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
-import { homedir } from "node:os"
-import prettyBytes from "pretty-bytes"
-import prettyMilliseconds from "pretty-ms"
-import type { Api } from "./api"
-import { ApiClient } from "./api-client"
-import { HttpServer } from "./http-server"
-import { formatCliId } from "./id"
-import type { ImageInfo } from "./image"
-import { TablePrinter } from "./table-printer"
-import { DEFAULT_VM_USER, type VmInfo } from "./vm"
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import prettyBytes from "pretty-bytes";
+import prettyMilliseconds from "pretty-ms";
+import type { Api } from "./api";
+import { ApiClient } from "./api-client";
+import { HttpServer } from "./http-server";
+import { formatCliId } from "./id";
+import type { ImageInfo } from "./image";
+import { TablePrinter } from "./table-printer";
+import { DEFAULT_VM_USER, type VmInfo } from "./vm";
 
-const DEFAULT_DATA_DIR = "data"
-const DEFAULT_SERVER_URL = "http://127.0.0.1:1234"
-const DEFAULT_VM_MEMORY = 2048
-const DEFAULT_VM_VCPU = 2
+const DEFAULT_DATA_DIR = "data";
+const DEFAULT_SERVER_URL = "http://127.0.0.1:1234";
+const DEFAULT_VM_MEMORY = 2048;
+const DEFAULT_VM_VCPU = 2;
 
 async function main() {
-  const [resource, action, ...rest] = Bun.argv.slice(2)
-  const flags = parseFlags(rest)
+  const [resource, action, ...rest] = Bun.argv.slice(2);
+  const flags = parseFlags(rest);
 
   if (resource === "server" && action === "start") {
     const server = await HttpServer.create({
       dataDir: resolve(flags.get("--data-dir") ?? DEFAULT_DATA_DIR),
       hostname: flags.get("--host"),
-      port: flags.has("--port") ? Number.parseInt(required(flags, "--port"), 10) : undefined,
-    })
-    await server.listen()
-    return
+      port: flags.has("--port")
+        ? Number.parseInt(required(flags, "--port"), 10)
+        : undefined,
+    });
+    await server.listen();
+    return;
   }
 
-  const api = createApi(flags)
+  const api = createApi(flags);
 
   if (resource === "images" && action === "list") {
-    const images = await api.listImages()
-    console.log(formatImageTable(images))
-    return
+    const images = await api.listImages();
+    console.log(formatImageTable(images));
+    return;
   }
 
   if (resource === "images" && action === "create") {
-    const name = required(flags, "--name")
-    const url = required(flags, "--url")
-    const image = await api.createImage({ name, url })
-    console.log(formatCliId(image.id))
-    return
+    const name = required(flags, "--name");
+    const url = required(flags, "--url");
+    const image = await api.createImage({ name, url });
+    console.log(formatCliId(image.id));
+    return;
   }
 
   if (resource === "images" && action === "remove") {
-    const id = required(flags, "--id")
-    await api.removeImage(id)
-    console.log(`removed ${formatCliId(id)}`)
-    return
+    const id = required(flags, "--id");
+    await api.removeImage(id);
+    console.log(`removed ${formatCliId(id)}`);
+    return;
   }
 
   if (resource === "vms" && action === "list") {
-    const vms = await api.listVms()
-    console.log(formatVmTable(vms))
-    return
+    const vms = await api.listVms();
+    console.log(formatVmTable(vms));
+    return;
   }
 
   if (resource === "vms" && action === "create") {
@@ -65,73 +67,77 @@ async function main() {
       baseImageId: required(flags, "--base-image"),
       user: flags.get("--user"),
       sshPublicKey: await resolveValue(required(flags, "--ssh-public-key")),
-      memory: flags.has("--memory") ? parseIntegerFlag(flags, "--memory") : DEFAULT_VM_MEMORY,
-      vcpu: flags.has("--vcpu") ? parseIntegerFlag(flags, "--vcpu") : DEFAULT_VM_VCPU,
-    })
-    console.log(`${formatCliId(vm.id)} ${vm.status} ${vm.name}`)
-    return
+      memory: flags.has("--memory")
+        ? parseIntegerFlag(flags, "--memory")
+        : DEFAULT_VM_MEMORY,
+      vcpu: flags.has("--vcpu")
+        ? parseIntegerFlag(flags, "--vcpu")
+        : DEFAULT_VM_VCPU,
+    });
+    console.log(`${formatCliId(vm.id)} ${vm.status} ${vm.name}`);
+    return;
   }
 
   if (resource === "vms" && action === "remove") {
-    const id = required(flags, "--id")
-    await api.removeVm(id)
-    console.log(`removed ${formatCliId(id)}`)
-    return
+    const id = required(flags, "--id");
+    await api.removeVm(id);
+    console.log(`removed ${formatCliId(id)}`);
+    return;
   }
 
   if (resource === "vms" && action === "start") {
-    const id = required(flags, "--id")
-    await api.startVm(id)
-    console.log(`started ${formatCliId(id)}`)
-    return
+    const id = required(flags, "--id");
+    await api.startVm(id);
+    console.log(`started ${formatCliId(id)}`);
+    return;
   }
 
   if (resource === "vms" && action === "stop") {
-    const id = required(flags, "--id")
-    await api.stopVm(id)
-    console.log(`stopped ${formatCliId(id)}`)
-    return
+    const id = required(flags, "--id");
+    await api.stopVm(id);
+    console.log(`stopped ${formatCliId(id)}`);
+    return;
   }
 
-  throw new Error(usage())
+  throw new Error(usage());
 }
 
 function parseFlags(argv: string[]): Map<string, string> {
-  const values = new Map<string, string>()
+  const values = new Map<string, string>();
 
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]
+    const arg = argv[index];
     if (arg === undefined) {
-      break
+      break;
     }
 
     if (!arg.startsWith("--")) {
-      throw new Error(`Unexpected argument: ${arg}`)
+      throw new Error(`Unexpected argument: ${arg}`);
     }
 
-    const [parsedFlag, inlineValue] = arg.split("=", 2)
-    const flag = parsedFlag ?? arg
-    const value = inlineValue ?? argv[index + 1]
+    const [parsedFlag, inlineValue] = arg.split("=", 2);
+    const flag = parsedFlag ?? arg;
+    const value = inlineValue ?? argv[index + 1];
     if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value for ${flag}`)
+      throw new Error(`Missing value for ${flag}`);
     }
 
     if (inlineValue === undefined) {
-      index += 1
+      index += 1;
     }
 
-    values.set(flag, value)
+    values.set(flag, value);
   }
 
-  return values
+  return values;
 }
 
 function required(flags: Map<string, string>, name: string): string {
-  const value = flags.get(name)
+  const value = flags.get(name);
   if (!value) {
-    throw new Error(`Missing required ${name}\n\n${usage()}`)
+    throw new Error(`Missing required ${name}\n\n${usage()}`);
   }
-  return value
+  return value;
 }
 
 function usage(): string {
@@ -146,19 +152,21 @@ function usage(): string {
     `  clawthing vms start --id <vm-id> [--server http://127.0.0.1:1234]`,
     `  clawthing vms stop --id <vm-id> [--server http://127.0.0.1:1234]`,
     `  clawthing vms remove --id <vm-id> [--server http://127.0.0.1:1234]`,
-  ].join("\n")
+  ].join("\n");
 }
 
 function createApi(flags: Map<string, string>): Api {
-  return new ApiClient(flags.get("--server") ?? DEFAULT_SERVER_URL)
+  return new ApiClient(flags.get("--server") ?? DEFAULT_SERVER_URL);
 }
 
 function formatImageTable(images: ImageInfo[]): string {
-  const includeProgress = images.some((image) => image.status === "downloading")
+  const includeProgress = images.some(
+    (image) => image.status === "downloading",
+  );
   const headers = includeProgress
     ? ["ID", "HASH", "NAME", "STATUS", "CREATED", "SIZE", "PROGRESS", "SOURCE"]
-    : ["ID", "HASH", "NAME", "STATUS", "CREATED", "SIZE", "SOURCE"]
-  const table = new TablePrinter(headers, { columnSpacing: 3 })
+    : ["ID", "HASH", "NAME", "STATUS", "CREATED", "SIZE", "SOURCE"];
+  const table = new TablePrinter(headers, { columnSpacing: 3 });
 
   for (const image of images) {
     const row = [
@@ -168,34 +176,44 @@ function formatImageTable(images: ImageInfo[]): string {
       image.status,
       formatCreatedAt(image.createdAt),
       formatImageSize(image.sizeBytes),
-    ]
+    ];
 
     if (includeProgress) {
-      row.push(formatImageProgress(image))
+      row.push(formatImageProgress(image));
     }
 
-    row.push(sourceFileName(image.url))
-    table.addRow(row)
+    row.push(sourceFileName(image.url));
+    table.addRow(row);
   }
 
-  return table.render()
+  return table.render();
 }
 
 function parseIntegerFlag(flags: Map<string, string>, name: string): number {
-  const value = Number.parseInt(required(flags, name), 10)
+  const value = Number.parseInt(required(flags, name), 10);
   if (!Number.isInteger(value)) {
-    throw new Error(`Invalid integer for ${name}: ${required(flags, name)}`)
+    throw new Error(`Invalid integer for ${name}: ${required(flags, name)}`);
   }
-  return value
+  return value;
 }
 
 function formatVmTable(vms: VmInfo[]): string {
   const table = new TablePrinter(
-    ["ID", "NAME", "IMAGE", "STATUS", "CREATED", "VCPU", "MEMORY", "DISK USAGE", "ADDRESS"],
+    [
+      "ID",
+      "NAME",
+      "IMAGE",
+      "STATUS",
+      "CREATED",
+      "VCPU",
+      "MEMORY",
+      "DISK USAGE",
+      "ADDRESS",
+    ],
     {
       columnSpacing: 3,
     },
-  )
+  );
 
   for (const vm of vms) {
     table.addRow([
@@ -208,84 +226,89 @@ function formatVmTable(vms: VmInfo[]): string {
       formatVmMemory(vm.memory),
       formatImageSize(vm.diskUsageBytes),
       vm.address ?? "-",
-    ])
+    ]);
   }
 
-  return table.render()
+  return table.render();
 }
 
 function formatVmMemory(memoryMiB: number): string {
-  return `${memoryMiB} MiB`
+  return `${memoryMiB} MiB`;
 }
 
 function formatImageSize(sizeBytes: number | undefined): string {
   if (sizeBytes === undefined) {
-    return "-"
+    return "-";
   }
 
-  return prettyBytes(sizeBytes)
+  return prettyBytes(sizeBytes);
 }
 
 function formatImageProgress(image: ImageInfo): string {
   if (image.status !== "downloading") {
-    return "-"
+    return "-";
   }
 
-  return `${Math.round(image.progress * 100)}%`
+  return `${Math.round(image.progress * 100)}%`;
 }
 
 function formatCreatedAt(createdAt: number | undefined): string {
   if (createdAt === undefined) {
-    return "-"
+    return "-";
   }
 
-  return `${prettyMilliseconds(Math.max(0, Date.now() - createdAt), { compact: true })} ago`
+  return `${prettyMilliseconds(Math.max(0, Date.now() - createdAt), { compact: true })} ago`;
 }
 
 function sourceFileName(url: string): string {
   if (!url) {
-    return "-"
+    return "-";
   }
 
   try {
-    const pathname = new URL(url).pathname
-    const segments = pathname.split("/").filter(Boolean)
-    return segments.at(-1) ?? url
+    const pathname = new URL(url).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    return segments.at(-1) ?? url;
   } catch {
-    const segments = url.split("/").filter(Boolean)
-    return segments.at(-1) ?? url
+    const segments = url.split("/").filter(Boolean);
+    return segments.at(-1) ?? url;
   }
 }
 
 async function resolveValue(value: string): Promise<string> {
-  const explicitPath = value.startsWith("@") ? value.slice(1) : null
-  const candidatePath = explicitPath ?? value
+  const explicitPath = value.startsWith("@") ? value.slice(1) : null;
+  const candidatePath = explicitPath ?? value;
 
   if (explicitPath || looksLikeFilePath(candidatePath)) {
-    const path = resolvePath(candidatePath)
-    return (await readFile(path, "utf8")).trim()
+    const path = resolvePath(candidatePath);
+    return (await readFile(path, "utf8")).trim();
   }
 
-  return value
+  return value;
 }
 
 function resolvePath(value: string) {
   if (value === "~") {
-    return homedir()
+    return homedir();
   }
 
   if (value.startsWith("~/")) {
-    return join(homedir(), value.slice(2))
+    return join(homedir(), value.slice(2));
   }
 
-  return resolve(value)
+  return resolve(value);
 }
 
 function looksLikeFilePath(value: string) {
-  return value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("~")
+  return (
+    value.startsWith("/") ||
+    value.startsWith("./") ||
+    value.startsWith("../") ||
+    value.startsWith("~")
+  );
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

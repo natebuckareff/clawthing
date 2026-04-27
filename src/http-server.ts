@@ -1,39 +1,39 @@
-import { resolve } from "node:path"
-import { ApiServer } from "./api-server"
-import { DataDir } from "./data-dir"
-import { ServerConfig } from "./server-config"
-import { TailscaleClient } from "./tailscale-client"
-import type { CreateVmInput } from "./vm"
+import { resolve } from "node:path";
+import { ApiServer } from "./api-server";
+import { DataDir } from "./data-dir";
+import { ServerConfig } from "./server-config";
+import { TailscaleClient } from "./tailscale-client";
+import type { CreateVmInput } from "./vm";
 
 interface HttpServerOptions {
-  dataDir?: string
-  hostname?: string
-  port?: number
+  dataDir?: string;
+  hostname?: string;
+  port?: number;
 }
 
 export class HttpServer {
-  private readonly api: ApiServer
-  private readonly hostname: string
-  private readonly port: number
+  private readonly api: ApiServer;
+  private readonly hostname: string;
+  private readonly port: number;
 
   constructor(api: ApiServer, options: HttpServerOptions = {}) {
-    this.api = api
-    this.hostname = options.hostname ?? "0.0.0.0"
-    this.port = options.port ?? 1234
+    this.api = api;
+    this.hostname = options.hostname ?? "0.0.0.0";
+    this.port = options.port ?? 1234;
   }
 
   static async create(options: HttpServerOptions = {}): Promise<HttpServer> {
-    const dataDir = resolve(options.dataDir ?? "data")
-    const serverConfig = new ServerConfig(dataDir)
-    const config = await serverConfig.read()
-    const tailscale = TailscaleClient.fromConfig(config.tailscale)
+    const dataDir = resolve(options.dataDir ?? "data");
+    const serverConfig = new ServerConfig(dataDir);
+    const config = await serverConfig.read();
+    const tailscale = TailscaleClient.fromConfig(config.tailscale);
     const api = new ApiServer({
       dataDir: new DataDir(dataDir),
       tailscale,
-    })
-    await api.initialize()
+    });
+    await api.initialize();
 
-    return new HttpServer(api, { ...options, dataDir })
+    return new HttpServer(api, { ...options, dataDir });
   }
 
   async listen(): Promise<void> {
@@ -41,10 +41,10 @@ export class HttpServer {
       hostname: this.hostname,
       port: this.port,
       fetch: (request) => this.handleRequest(request),
-    })
+    });
 
-    console.log(`Listening on http://${this.hostname}:${this.port}`)
-    await new Promise<void>(() => {})
+    console.log(`Listening on http://${this.hostname}:${this.port}`);
+    await new Promise<void>(() => {});
   }
 
   private async handleRequest(request: Request): Promise<Response> {
@@ -53,19 +53,19 @@ export class HttpServer {
         error: {
           message: `Unsupported method: ${request.method}`,
         },
-      })
+      });
     }
 
     try {
-      const pathname = new URL(request.url).pathname
-      const body = await this.parseRequestBody(request)
+      const pathname = new URL(request.url).pathname;
+      const body = await this.parseRequestBody(request);
 
       if (pathname === "/api/list-vms") {
-        return jsonResponse(200, { data: await this.api.listVms() })
+        return jsonResponse(200, { data: await this.api.listVms() });
       }
 
       if (pathname === "/api/list-images") {
-        return jsonResponse(200, { data: await this.api.listImages() })
+        return jsonResponse(200, { data: await this.api.listImages() });
       }
 
       if (pathname === "/api/create-vm") {
@@ -74,12 +74,12 @@ export class HttpServer {
             error: {
               message: "Invalid create-vm request body",
             },
-          })
+          });
         }
 
         return jsonResponse(200, {
           data: await this.api.createVm(body),
-        })
+        });
       }
 
       if (pathname === "/api/remove-image") {
@@ -88,11 +88,11 @@ export class HttpServer {
             error: {
               message: "Invalid remove-image request body",
             },
-          })
+          });
         }
 
-        await this.api.removeImage(body.id)
-        return jsonResponse(200, { data: null })
+        await this.api.removeImage(body.id);
+        return jsonResponse(200, { data: null });
       }
 
       if (pathname === "/api/remove-vm") {
@@ -101,11 +101,11 @@ export class HttpServer {
             error: {
               message: "Invalid remove-vm request body",
             },
-          })
+          });
         }
 
-        await this.api.removeVm(body.id)
-        return jsonResponse(200, { data: null })
+        await this.api.removeVm(body.id);
+        return jsonResponse(200, { data: null });
       }
 
       if (pathname === "/api/start-vm") {
@@ -114,11 +114,11 @@ export class HttpServer {
             error: {
               message: "Invalid start-vm request body",
             },
-          })
+          });
         }
 
-        await this.api.startVm(body.id)
-        return jsonResponse(200, { data: null })
+        await this.api.startVm(body.id);
+        return jsonResponse(200, { data: null });
       }
 
       if (pathname === "/api/stop-vm") {
@@ -127,11 +127,11 @@ export class HttpServer {
             error: {
               message: "Invalid stop-vm request body",
             },
-          })
+          });
         }
 
-        await this.api.stopVm(body.id)
-        return jsonResponse(200, { data: null })
+        await this.api.stopVm(body.id);
+        return jsonResponse(200, { data: null });
       }
 
       if (pathname === "/api/create-image") {
@@ -140,39 +140,41 @@ export class HttpServer {
             error: {
               message: "Invalid create-image request body",
             },
-          })
+          });
         }
 
         return jsonResponse(200, {
           data: await this.api.createImage(body),
-        })
+        });
       }
 
       return jsonResponse(404, {
         error: {
           message: `Unknown endpoint: ${pathname}`,
         },
-      })
+      });
     } catch (error: unknown) {
       return jsonResponse(500, {
         error: {
           message: error instanceof Error ? error.message : String(error),
         },
-      })
+      });
     }
   }
 
   private async parseRequestBody(request: Request): Promise<unknown> {
-    const contentType = request.headers.get("content-type") ?? ""
+    const contentType = request.headers.get("content-type") ?? "";
     if (!contentType.includes("application/json")) {
-      return {}
+      return {};
     }
 
-    return request.json()
+    return request.json();
   }
 }
 
-function isCreateImageBody(body: unknown): body is { name: string; url: string } {
+function isCreateImageBody(
+  body: unknown,
+): body is { name: string; url: string } {
   return (
     typeof body === "object" &&
     body !== null &&
@@ -180,7 +182,7 @@ function isCreateImageBody(body: unknown): body is { name: string; url: string }
     typeof body.name === "string" &&
     "url" in body &&
     typeof body.url === "string"
-  )
+  );
 }
 
 function isCreateVmBody(body: unknown): body is CreateVmInput {
@@ -191,14 +193,16 @@ function isCreateVmBody(body: unknown): body is CreateVmInput {
     typeof body.name === "string" &&
     "baseImageId" in body &&
     typeof body.baseImageId === "string" &&
-    (!("user" in body) || body.user === undefined || typeof body.user === "string") &&
+    (!("user" in body) ||
+      body.user === undefined ||
+      typeof body.user === "string") &&
     "sshPublicKey" in body &&
     typeof body.sshPublicKey === "string" &&
     "memory" in body &&
     typeof body.memory === "number" &&
     "vcpu" in body &&
     typeof body.vcpu === "number"
-  )
+  );
 }
 
 function isRemoveVmBody(body: unknown): body is { id: string } {
@@ -207,7 +211,7 @@ function isRemoveVmBody(body: unknown): body is { id: string } {
     body !== null &&
     "id" in body &&
     typeof body.id === "string"
-  )
+  );
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -216,53 +220,57 @@ function jsonResponse(status: number, body: unknown): Response {
     headers: {
       "content-type": "application/json",
     },
-  })
+  });
 }
 
 if (import.meta.main) {
-  const flags = parseFlags(Bun.argv.slice(2))
+  const flags = parseFlags(Bun.argv.slice(2));
   HttpServer.create({
     dataDir: flags.get("--data-dir"),
     hostname: flags.get("--host"),
-    port: flags.has("--port") ? Number.parseInt(required(flags, "--port"), 10) : undefined,
+    port: flags.has("--port")
+      ? Number.parseInt(required(flags, "--port"), 10)
+      : undefined,
   })
     .then((server) => server.listen())
     .catch((error: unknown) => {
-      console.error(error instanceof Error ? error.message : String(error))
-      process.exitCode = 1
-    })
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
 }
 
 function parseFlags(argv: string[]): Map<string, string> {
-  const values = new Map<string, string>()
+  const values = new Map<string, string>();
 
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]
-    if (!arg.startsWith("--")) {
-      throw new Error(`Unexpected argument: ${arg}`)
+    const arg = argv[index];
+    if (!arg || !arg.startsWith("--")) {
+      throw new Error(`Unexpected argument: ${arg}`);
     }
 
-    const [flag, inlineValue] = arg.split("=", 2)
-    const value = inlineValue ?? argv[index + 1]
+    const [flag, inlineValue] = arg.split("=", 2);
+    const value = inlineValue ?? argv[index + 1];
     if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value for ${flag}`)
+      throw new Error(`Missing value for ${flag}`);
     }
 
     if (inlineValue === undefined) {
-      index += 1
+      index += 1;
     }
 
-    values.set(flag, value)
+    // XXX: or empty string is hack, please fix / use an actual arg parsing
+    // library
+    values.set(flag ?? "", value);
   }
 
-  return values
+  return values;
 }
 
 function required(flags: Map<string, string>, name: string): string {
-  const value = flags.get(name)
+  const value = flags.get(name);
   if (!value) {
-    throw new Error(`Missing required ${name}`)
+    throw new Error(`Missing required ${name}`);
   }
 
-  return value
+  return value;
 }

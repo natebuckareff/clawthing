@@ -1,62 +1,62 @@
-import { formatCliId, type Id } from "./id"
+import { formatCliId, type Id } from "./id";
 
-export const DEFAULT_VM_USER = "clawthing"
+export const DEFAULT_VM_USER = "clawthing";
 
 export interface VmInfo {
-  id: Id
-  name: string
-  status: VmStatus
-  createdAt?: number
-  baseImageId?: Id
-  baseImageName: string
-  diskUsageBytes?: number
-  memory: number
-  vcpu: number
-  address?: string
-  error?: string
+  id: Id;
+  name: string;
+  status: VmStatus;
+  createdAt?: number;
+  baseImageId?: Id;
+  baseImageName: string;
+  diskUsageBytes?: number;
+  memory: number;
+  vcpu: number;
+  address?: string;
+  error?: string;
 }
 
 export interface VmRequest {
-  name: string
-  createdAt?: number
-  baseImageId: Id
-  user: string
-  sshPublicKey: string
-  tailscaleAuthKey: string
-  memory: number
-  vcpu: number
+  name: string;
+  createdAt?: number;
+  baseImageId: Id;
+  user: string;
+  sshPublicKey: string;
+  tailscaleAuthKey: string;
+  memory: number;
+  vcpu: number;
 }
 
 export interface VmMetadata {
-  id: Id
-  name: string
-  createdAt?: number
-  baseImageId: Id
-  baseImageName: string
-  memory: number
-  vcpu: number
-  user: string
-  tailscaleDeviceId: string
+  id: Id;
+  name: string;
+  createdAt?: number;
+  baseImageId: Id;
+  baseImageName: string;
+  memory: number;
+  vcpu: number;
+  user: string;
+  tailscaleDeviceId: string;
 }
 
 export interface CreateVmParams {
-  name: string
-  createdAt?: number
-  baseImageId: Id
-  user: string
-  sshPublicKey: string
-  tailscaleAuthKey: string
-  memory: number
-  vcpu: number
+  name: string;
+  createdAt?: number;
+  baseImageId: Id;
+  user: string;
+  sshPublicKey: string;
+  tailscaleAuthKey: string;
+  memory: number;
+  vcpu: number;
 }
 
 export interface CreateVmInput {
-  name: string
-  baseImageId: string
-  user?: string
-  sshPublicKey: string
-  memory: number
-  vcpu: number
+  name: string;
+  baseImageId: string;
+  user?: string;
+  sshPublicKey: string;
+  memory: number;
+  vcpu: number;
 }
 
 export type VmStatus =
@@ -67,12 +67,14 @@ export type VmStatus =
   | "create-interrupted"
   | "stopping"
   | "stopped"
-  | "running"
+  | "running";
 
 export function getVmHostname(name: string, id: Id): string {
-  return `${name}-${formatCliId(id)}`
+  return `${name}-${formatCliId(id)}`;
 }
 
 export function isVmCreateInProgress(status: VmStatus): boolean {
-  return status === "preparing" || status === "creating" || status === "connecting"
+  return (
+    status === "preparing" || status === "creating" || status === "connecting"
+  );
 }

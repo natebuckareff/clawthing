@@ -1,47 +1,47 @@
-import { createHash } from "node:crypto"
-import { open } from "node:fs/promises"
-import { DataDir } from "./data-dir"
-import { unlinkIfPresent } from "./fs"
-import { generateId, type Id } from "./id"
-import type { ImageInfo, ImageStatus } from "./image"
-import { LoadImage } from "./load-image"
+import { createHash } from "node:crypto";
+import { open } from "node:fs/promises";
+import { DataDir } from "./data-dir";
+import { unlinkIfPresent } from "./fs";
+import { generateId, type Id } from "./id";
+import type { ImageInfo, ImageStatus } from "./image";
+import { LoadImage } from "./load-image";
 
 export interface CreateImageParams {
-  name: string
-  url: string
-  createdAt?: number
+  name: string;
+  url: string;
+  createdAt?: number;
 }
 
 interface CreateImageOptions {
-  id?: Id
+  id?: Id;
 }
 
 export class CreateImage {
-  private readonly id: Id
-  private readonly name: string
-  private readonly createdAt: number
-  private downloadedBytes: number
-  private progress: number
-  private hash?: string
-  private error?: string
-  private status: ImageStatus
-  private downloadPromise?: Promise<void>
-  private readonly abortController: AbortController
-  private isCanceled: boolean
+  private readonly id: Id;
+  private readonly name: string;
+  private readonly createdAt: number;
+  private downloadedBytes: number;
+  private progress: number;
+  private hash?: string;
+  private error?: string;
+  private status: ImageStatus;
+  private downloadPromise?: Promise<void>;
+  private readonly abortController: AbortController;
+  private isCanceled: boolean;
 
   constructor(
     private readonly dataDir: DataDir,
     public readonly params: CreateImageParams,
     options: CreateImageOptions = {},
   ) {
-    this.id = options.id ?? generateId()
-    this.name = params.name
-    this.createdAt = params.createdAt ?? Date.now()
-    this.downloadedBytes = 0
-    this.progress = 0
-    this.status = "downloading"
-    this.abortController = new AbortController()
-    this.isCanceled = false
+    this.id = options.id ?? generateId();
+    this.name = params.name;
+    this.createdAt = params.createdAt ?? Date.now();
+    this.downloadedBytes = 0;
+    this.progress = 0;
+    this.status = "downloading";
+    this.abortController = new AbortController();
+    this.isCanceled = false;
   }
 
   async getInfo(): Promise<ImageInfo> {
@@ -55,108 +55,114 @@ export class CreateImage {
       sizeBytes: this.downloadedBytes,
       progress: this.progress,
       error: this.error,
-    }
+    };
   }
 
   async start(): Promise<void> {
     if (this.downloadPromise) {
-      return
+      return;
     }
 
     await this.dataDir.writeImageRequest(this.id, {
       name: this.params.name,
       url: this.params.url,
       createdAt: this.createdAt,
-    })
+    });
 
-    const downloadPath = await this.dataDir.getImageDownloadPath(this.id)
-    await unlinkIfPresent(downloadPath)
+    const downloadPath = await this.dataDir.getImageDownloadPath(this.id);
+    await unlinkIfPresent(downloadPath);
 
-    this.downloadPromise = this.runDownload(downloadPath).catch((error: unknown) => {
-      if (this.isCanceled) {
-        return
-      }
+    this.downloadPromise = this.runDownload(downloadPath).catch(
+      (error: unknown) => {
+        if (this.isCanceled) {
+          return;
+        }
 
-      this.error = error instanceof Error ? error.message : String(error)
-      this.status = "download-fail"
-    })
+        this.error = error instanceof Error ? error.message : String(error);
+        this.status = "download-fail";
+      },
+    );
   }
 
   async cancel(): Promise<void> {
-    this.isCanceled = true
-    this.abortController.abort()
-    await this.downloadPromise
+    this.isCanceled = true;
+    this.abortController.abort();
+    await this.downloadPromise;
   }
 
   async complete(): Promise<LoadImage | undefined> {
     if (this.status === "downloading") {
-      return undefined
+      return undefined;
     }
 
     if (this.status !== "ready") {
-      return undefined
+      return undefined;
     }
 
-    return new LoadImage(this.dataDir, this.id)
+    return new LoadImage(this.dataDir, this.id);
   }
 
   private async runDownload(downloadPath: string): Promise<void> {
     const response = await fetch(this.params.url, {
       signal: this.abortController.signal,
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to download ${this.params.url}: ${response.status} ${response.statusText}`)
+      throw new Error(
+        `Failed to download ${this.params.url}: ${response.status} ${response.statusText}`,
+      );
     }
 
     if (!response.body) {
-      throw new Error("Download response did not include a body")
+      throw new Error("Download response did not include a body");
     }
 
-    const totalBytesHeader = response.headers.get("content-length")
-    const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN
-    const hasKnownLength = Number.isFinite(totalBytes) && totalBytes > 0
-    const file = await open(downloadPath, "w")
-    const reader = response.body.getReader()
-    const hasher = createHash("sha256")
-    let downloadedBytes = 0
+    const totalBytesHeader = response.headers.get("content-length");
+    const totalBytes = totalBytesHeader
+      ? Number.parseInt(totalBytesHeader, 10)
+      : Number.NaN;
+    const hasKnownLength = Number.isFinite(totalBytes) && totalBytes > 0;
+    const file = await open(downloadPath, "w");
+    const reader = response.body.getReader();
+    const hasher = createHash("sha256");
+    let downloadedBytes = 0;
 
     try {
       while (true) {
-        const { done, value } = await reader.read()
+        const { done, value } = await reader.read();
 
         if (done) {
-          break
+          break;
         }
 
         if (!value) {
-          continue
+          continue;
         }
 
-        await file.write(value)
-        hasher.update(value)
-        downloadedBytes += value.byteLength
-        this.downloadedBytes = downloadedBytes
+        await file.write(value);
+        hasher.update(value);
+        downloadedBytes += value.byteLength;
+        this.downloadedBytes = downloadedBytes;
         if (hasKnownLength) {
-          this.progress = Math.min(downloadedBytes / totalBytes, 1)
+          this.progress = Math.min(downloadedBytes / totalBytes, 1);
         }
       }
     } finally {
-      await file.close()
+      await file.close();
     }
 
-    this.hash = hasher.digest("hex")
-    this.downloadedBytes = downloadedBytes
-    this.progress = 1
-    await this.dataDir.completeImageDownload(this.id)
+    this.hash = hasher.digest("hex");
+    this.downloadedBytes = downloadedBytes;
+    this.progress = 1;
+    await this.dataDir.completeImageDownload(this.id);
     await this.dataDir.writeImageMetadata(this.id, {
       id: this.id,
       name: this.name,
       url: this.params.url,
       createdAt: this.createdAt,
       hash: this.hash,
-    })
-    await this.dataDir.removeImageRequest(this.id)
-    this.status = "ready"
+    });
+    await this.dataDir.removeImageRequest(this.id);
+    this.status = "ready";
   }
 }

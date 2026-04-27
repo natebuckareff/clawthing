@@ -1,80 +1,83 @@
-import { Api } from "./api"
-import { CreateImageParams } from "./create-image"
-import { ImageInfo } from "./image"
-import { CreateVmInput, VmInfo } from "./vm"
+import type { Api } from "./api";
+import type { CreateImageParams } from "./create-image";
+import type { ImageInfo } from "./image";
+import type { CreateVmInput, VmInfo } from "./vm";
 
 interface ApiSuccess<T> {
-  data: T
+  data: T;
 }
 
 interface ApiFailure {
   error: {
-    message: string
-  }
+    message: string;
+  };
 }
 
 export class ApiClient implements Api {
   constructor(private readonly baseUrl: string) {}
 
   async listVms(): Promise<VmInfo[]> {
-    return this.post<VmInfo[]>("/api/list-vms", {})
+    return this.post<VmInfo[]>("/api/list-vms", {});
   }
 
   async listImages(): Promise<ImageInfo[]> {
-    return this.post<ImageInfo[]>("/api/list-images", {})
+    return this.post<ImageInfo[]>("/api/list-images", {});
   }
 
   async createVm(params: CreateVmInput): Promise<VmInfo> {
-    return this.post<VmInfo>("/api/create-vm", params)
+    return this.post<VmInfo>("/api/create-vm", params);
   }
 
   async startVm(id: string): Promise<void> {
-    return this.post<void>("/api/start-vm", { id })
+    return this.post<void>("/api/start-vm", { id });
   }
 
   async stopVm(id: string): Promise<void> {
-    return this.post<void>("/api/stop-vm", { id })
+    return this.post<void>("/api/stop-vm", { id });
   }
 
   async removeVm(id: string): Promise<void> {
-    return this.post<void>("/api/remove-vm", { id })
+    return this.post<void>("/api/remove-vm", { id });
   }
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
-    return this.post<ImageInfo>("/api/create-image", params)
+    return this.post<ImageInfo>("/api/create-image", params);
   }
 
   async removeImage(id: string): Promise<void> {
-    return this.post<void>("/api/remove-image", { id })
+    return this.post<void>("/api/remove-image", { id });
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(new URL(path, normalizedBaseUrl(this.baseUrl)), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      new URL(path, normalizedBaseUrl(this.baseUrl)),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    })
+    );
 
-    const payload = (await response.json()) as ApiSuccess<T> | ApiFailure
+    const payload = (await response.json()) as ApiSuccess<T> | ApiFailure;
 
     if (!response.ok) {
       if ("error" in payload) {
-        throw new Error(payload.error.message)
+        throw new Error(payload.error.message);
       }
 
-      throw new Error(`HTTP ${response.status} ${response.statusText}`)
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
     }
 
     if (!("data" in payload)) {
-      throw new Error("API response did not include data")
+      throw new Error("API response did not include data");
     }
 
-    return payload.data
+    return payload.data;
   }
 }
 
 function normalizedBaseUrl(baseUrl: string): string {
-  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
+  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 }
