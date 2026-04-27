@@ -1,6 +1,9 @@
 import { HttpClient } from "./http-client"
 import type { TailscaleConfig } from "./server-config"
 
+const DEVICE_WAIT_POLL_MS = 2_000
+const LIST_DEVICES_REQUEST_KEY = "tailscale:list-devices"
+
 interface TailscaleOAuthTokenResponse {
   access_token: string
   token_type: "Bearer"
@@ -106,6 +109,7 @@ export class TailscaleClient {
   async listDevices(): Promise<TailscaleDevice[]> {
     const accessToken = await this.getAccessToken("devices:core:read")
     const response = await this.httpClient.fetch(`https://api.tailscale.com/api/v2/tailnet/${this.tailnet}/devices`, {
+      requestKey: LIST_DEVICES_REQUEST_KEY,
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -146,6 +150,8 @@ export class TailscaleClient {
           throw error
         }
       }
+
+      await Bun.sleep(DEVICE_WAIT_POLL_MS)
     }
   }
 
@@ -193,6 +199,7 @@ export class TailscaleClient {
     }
 
     const response = await this.httpClient.fetch(this.tokenUrl, {
+      requestKey: `tailscale:oauth:${scope}:${tagsKey}`,
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",

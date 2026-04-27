@@ -85,16 +85,15 @@ export class ApiServer implements Api {
   }
 
   async listVms(): Promise<VmInfo[]> {
-    const vms: VmInfo[] = []
-    for (const [id, vm] of this.vms.entries()) {
+    const each = async ([id, vm]) => {
       const completed = vm instanceof CreateVm ? await vm.complete() : undefined
       const resolvedVm = completed ?? vm
       if (completed) {
         this.vms.set(id, completed)
       }
-      vms.push(await resolvedVm.getInfo())
+      return resolvedVm.getInfo()
     }
-
+    const vms = await Promise.all([...this.vms.entries()].map(each))
     vms.sort((a, b) => a.name.localeCompare(b.name))
     return vms
   }

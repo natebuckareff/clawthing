@@ -91,8 +91,7 @@ export class LoadVm {
   }
 
   async retryCreate(): Promise<CreateVm | undefined> {
-    const info = await this.getInfo()
-    if (info.status !== "create-interrupted") {
+    if (await this.getMetadata()) {
       return undefined
     }
 
