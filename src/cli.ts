@@ -158,13 +158,14 @@ function createApi(flags: Map<string, string>): Api {
 function formatImageTable(images: ImageInfo[]): string {
   const includeProgress = images.some((image) => image.status === "downloading")
   const headers = includeProgress
-    ? ["ID", "NAME", "STATUS", "CREATED", "SIZE", "PROGRESS", "SOURCE"]
-    : ["ID", "NAME", "STATUS", "CREATED", "SIZE", "SOURCE"]
+    ? ["ID", "HASH", "NAME", "STATUS", "CREATED", "SIZE", "PROGRESS", "SOURCE"]
+    : ["ID", "HASH", "NAME", "STATUS", "CREATED", "SIZE", "SOURCE"]
   const table = new TablePrinter(headers, { columnSpacing: 3 })
 
   for (const image of images) {
     const row = [
       formatCliId(image.id),
+      image.hash ? formatCliId(image.hash) : "-",
       image.name,
       image.status,
       formatCreatedAt(image.createdAt),
