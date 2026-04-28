@@ -1,10 +1,15 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { relative } from "node:path";
 import { DataDir } from "./data-dir";
 import { generateId, type Id } from "./id";
 import { LibvirtClient } from "./libvirt-client";
 import { TailscaleClient } from "./tailscale-client";
 import { runCommand } from "./util";
+import metaDataTemplate from "../templates/meta-data.yml" with { type: "text" };
+import netTemplate from "../templates/net.xml" with { type: "text" };
+import networkConfigTemplate from "../templates/network-config.yml" with { type: "text" };
+import userDataTemplate from "../templates/user-data.yml" with { type: "text" };
+import vmXmlTemplate from "../templates/vm.xml" with { type: "text" };
 import {
   getVmHostname,
   isVmCreateInProgress,
@@ -18,11 +23,10 @@ import { LoadVm } from "./load-vm";
 
 interface CreateVmOptions {
   id?: Id;
-  templateDir?: string;
   tailscale: TailscaleClient;
 }
 
-const LIBVIRT_NETWORK_NAME = "clawnet";
+const LIBVIRT_NETWORK_NAME = "vmlotnet";
 
 export class CreateVm {
   private readonly id: Id;
@@ -30,7 +34,6 @@ export class CreateVm {
   private status: VmStatus;
   private error?: string;
   private createPromise?: Promise<void>;
-  private readonly templateDir: string;
   private readonly libvirt: LibvirtClient;
   private readonly tailscale: TailscaleClient;
 
@@ -42,8 +45,6 @@ export class CreateVm {
     this.id = options.id ?? generateId();
     this.createdAt = params.createdAt ?? Date.now();
     this.status = "preparing";
-    this.templateDir =
-      options.templateDir ?? resolve(import.meta.dir, "..", "templates");
     this.libvirt = new LibvirtClient();
     this.tailscale = options.tailscale;
   }
@@ -103,7 +104,6 @@ export class CreateVm {
 
     const baseImagePath = await this.dataDir.getImagePath(baseImageMetadata.id);
     const vmDir = await this.dataDir.getVmDirPath(this.id);
-    const templates = getTemplatePaths(this.templateDir);
     const hostname = getVmHostname(this.params.name, this.id);
     const replacements = {
       HOSTNAME: hostname,
@@ -119,28 +119,19 @@ export class CreateVm {
 
     await writeFile(
       await this.dataDir.getVmUserDataPath(this.id),
-      renderTemplate(
-        await readFile(templates.userDataTemplatePath, "utf8"),
-        replacements,
-      ),
+      renderTemplate(userDataTemplate, replacements),
     );
     await writeFile(
       await this.dataDir.getVmMetaDataPath(this.id),
-      renderTemplate(
-        await readFile(templates.metaDataTemplatePath, "utf8"),
-        replacements,
-      ),
+      renderTemplate(metaDataTemplate, replacements),
     );
     await writeFile(
       await this.dataDir.getVmNetworkConfigPath(this.id),
-      await readFile(templates.networkConfigTemplatePath, "utf8"),
+      networkConfigTemplate,
     );
     await writeFile(
       await this.dataDir.getVmXmlPath(this.id),
-      renderTemplate(
-        await readFile(templates.vmXmlTemplatePath, "utf8"),
-        replacements,
-      ),
+      renderTemplate(vmXmlTemplate, replacements),
     );
 
     await this.createLinkedDisk(baseImagePath, vmDir);
@@ -229,7 +220,9 @@ export class CreateVm {
     const networkInfo = this.libvirt.getNetworkInfo(LIBVIRT_NETWORK_NAME);
 
     if (!networkInfo) {
-      this.libvirt.defineNetwork(join(this.templateDir, "net.xml"));
+      const networkXmlPath = await this.dataDir.getLibvirtNetworkXmlPath();
+      await writeFile(networkXmlPath, netTemplate);
+      this.libvirt.defineNetwork(networkXmlPath);
       this.libvirt.startNetwork(LIBVIRT_NETWORK_NAME);
       this.libvirt.autostartNetwork(LIBVIRT_NETWORK_NAME);
       return;
@@ -255,15 +248,6 @@ export class CreateVm {
       vcpu: this.params.vcpu,
     };
   }
-}
-
-function getTemplatePaths(templateDir: string) {
-  return {
-    userDataTemplatePath: join(templateDir, "user-data.yml"),
-    metaDataTemplatePath: join(templateDir, "meta-data.yml"),
-    networkConfigTemplatePath: join(templateDir, "network-config.yml"),
-    vmXmlTemplatePath: join(templateDir, "vm.xml"),
-  };
 }
 
 function renderTemplate(

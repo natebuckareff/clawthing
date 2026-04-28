@@ -28,6 +28,7 @@ $DATA_DIR/vms/{id}/seed.iso                 # cloud-init seed iso
 $DATA_DIR/vms/{id}/network-config           # rendered cloud-init network-config
 $DATA_DIR/vms/{id}/meta-data                # rendered cloud-init meta-data
 $DATA_DIR/vms/{id}/user-data                # rendered cloud-init user-data
+$DATA_DIR/net.xml                           # rendered libvirt network config
 */
 
 export class DataDir {
@@ -232,6 +233,11 @@ export class DataDir {
     return this.vmNetworkConfigPath(id);
   }
 
+  async getLibvirtNetworkXmlPath(): Promise<string> {
+    await this.setup();
+    return this.libvirtNetworkXmlPath();
+  }
+
   async removeVmDir(id: Id): Promise<void> {
     await this.setup();
     await this.removeDirectoryIfPresent(this.vmDirPath(id));
@@ -314,6 +320,10 @@ export class DataDir {
 
   private vmNetworkConfigPath(id: Id): string {
     return join(this.vmDirPath(id), "network-config");
+  }
+
+  private libvirtNetworkXmlPath(): string {
+    return join(this.path, "net.xml");
   }
 
   private async removeDirectoryIfPresent(path: string): Promise<void> {
