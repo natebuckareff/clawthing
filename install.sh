@@ -42,6 +42,8 @@ write_sysusers_file() {
   install -d -m 0755 "$(dirname "${SYSUSERS_PATH}")"
   cat >"${SYSUSERS_PATH}" <<EOF
 u vmlot - "vmlot server" /var/lib/vmlot /usr/sbin/nologin
+m vmlot libvirt
+m vmlot kvm
 EOF
   chmod 0644 "${SYSUSERS_PATH}"
 }
@@ -58,7 +60,6 @@ After=network-online.target
 Type=simple
 User=vmlot
 Group=vmlot
-SupplementaryGroups=libvirt
 Environment=VMLOT_CONFIG_DIR=${CONFIG_DIR}
 StateDirectory=vmlot
 StateDirectoryMode=0755
