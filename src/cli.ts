@@ -12,18 +12,18 @@ import type { ImageInfo } from "./image";
 import { ServerConfig, isMissingServerConfigError } from "./server-config";
 import { ServerDiscovery } from "./server-discovery";
 import {
+  DEFAULT_SERVER_HOST,
+  DEFAULT_SERVER_PORT,
+  DEFAULT_SERVER_URL,
   endpointUrl,
-  ServerRegistry,
-  type ServerRegistryEntry,
-} from "./server-registry";
+  isServerUrl,
+  type ServerEntry,
+} from "./server";
 import { TablePrinter } from "./table-printer";
 import { TailscaleClient } from "./tailscale-client";
 import { DEFAULT_VM_USER, type VmInfo } from "./vm";
 
 const DEFAULT_DATA_DIR = "data";
-const DEFAULT_SERVER_PORT = 10450;
-const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
-const DEFAULT_SERVER_HOST = "127.0.0.1";
 const DEFAULT_VM_MEMORY = 2048;
 const DEFAULT_VM_VCPU = 2;
 const SERVER_PING_TIMEOUT_MS = 2000;
@@ -33,7 +33,7 @@ type ServerPing =
   | { status: "timeout" }
   | { status: "offline" };
 
-interface ServerRegistryEntryWithPing extends ServerRegistryEntry {
+interface ServerEntryWithPing extends ServerEntry {
   ping: ServerPing;
 }
 
@@ -80,24 +80,6 @@ async function main() {
   if (resource === "servers" && action === "list") {
     const servers = await listServers();
     console.log(formatServerTable(await pingServers(servers)));
-    return;
-  }
-
-  if (resource === "servers" && action === "add") {
-    const name = required(flags, "--name");
-    const host = required(flags, "--host");
-    const port = flags.has("--port")
-      ? parseIntegerFlag(flags, "--port")
-      : DEFAULT_SERVER_PORT;
-    await new ServerRegistry().add(name, { host, port });
-    console.log(`added ${name}`);
-    return;
-  }
-
-  if (resource === "servers" && action === "remove") {
-    const name = required(flags, "--name");
-    await new ServerRegistry().remove(name);
-    console.log(`removed ${name}`);
     return;
   }
 
@@ -202,16 +184,14 @@ function usage(): string {
     `Usage:`,
     `  vmlot run [--data-dir ./data] [--host 0.0.0.0] [--port ${DEFAULT_SERVER_PORT}]`,
     `  vmlot servers list`,
-    `  vmlot servers add --name lab --host 10.0.0.50 [--port ${DEFAULT_SERVER_PORT}]`,
-    `  vmlot servers remove --name lab`,
-    `  vmlot images list [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot images create --name debian-13 --url https://... [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot images remove --id <image-id> [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot vms list [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot vms create --name vm01 --base-image debian-13 [--user ${DEFAULT_VM_USER}] --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot vms start --id <vm-id> [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot vms stop --id <vm-id> [--server lab|${DEFAULT_SERVER_URL}]`,
-    `  vmlot vms remove --id <vm-id> [--server lab|${DEFAULT_SERVER_URL}]`,
+    `  vmlot images list [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot images create --name debian-13 --url https://... [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot images remove --id <image-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms list [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms create --name vm01 --base-image debian-13 [--user ${DEFAULT_VM_USER}] --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms start --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms stop --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms remove --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
   ].join("\n");
 }
 
@@ -224,19 +204,13 @@ async function createApi(flags: Map<string, string>): Promise<Api> {
   return new ApiClient(await resolveServer(server));
 }
 
-async function listServers(): Promise<ServerRegistryEntry[]> {
-  const localServers = await new ServerRegistry().list();
-  const discoveredServers = await discoverServers();
-  return mergeServers(localServers, discoveredServers);
+async function listServers(): Promise<ServerEntry[]> {
+  return await discoverServers();
 }
 
 async function resolveServer(server: string): Promise<string> {
-  try {
-    return await new ServerRegistry().resolve(server);
-  } catch (error: unknown) {
-    if (!isUnknownServerError(error)) {
-      throw error;
-    }
+  if (isServerUrl(server)) {
+    return server;
   }
 
   const discoveredServers = await discoverServers();
@@ -250,7 +224,7 @@ async function resolveServer(server: string): Promise<string> {
   return endpointUrl(discoveredServer.endpoint);
 }
 
-async function discoverServers(): Promise<ServerRegistryEntry[]> {
+async function discoverServers(): Promise<ServerEntry[]> {
   const discovery = await createServerDiscovery();
   return discovery ? await discovery.list() : [];
 }
@@ -270,31 +244,10 @@ async function createServerDiscovery(): Promise<ServerDiscovery | undefined> {
   return new ServerDiscovery(TailscaleClient.fromConfig(config.tailscale));
 }
 
-function mergeServers(
-  localServers: ServerRegistryEntry[],
-  discoveredServers: ServerRegistryEntry[],
-): ServerRegistryEntry[] {
-  const servers = new Map<string, ServerRegistryEntry>();
-  for (const server of discoveredServers) {
-    servers.set(server.name, server);
-  }
-  for (const server of localServers) {
-    servers.set(server.name, server);
-  }
-
-  return [...servers.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
-}
-
-function isUnknownServerError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith("Unknown server: ");
-}
-
 async function pingServers(
-  servers: ServerRegistryEntry[],
-): Promise<ServerRegistryEntryWithPing[]> {
-  const localServer: ServerRegistryEntry = {
+  servers: ServerEntry[],
+): Promise<ServerEntryWithPing[]> {
+  const localServer: ServerEntry = {
     name: "",
     endpoint: {
       host: DEFAULT_SERVER_HOST,
@@ -314,7 +267,7 @@ async function pingServers(
   ];
 }
 
-async function pingServer(server: ServerRegistryEntry): Promise<ServerPing> {
+async function pingServer(server: ServerEntry): Promise<ServerPing> {
   const controller = new AbortController();
   let didTimeout = false;
   const timeout = setTimeout(() => {
@@ -338,7 +291,7 @@ async function pingServer(server: ServerRegistryEntry): Promise<ServerPing> {
   }
 }
 
-function formatServerTable(servers: ServerRegistryEntryWithPing[]): string {
+function formatServerTable(servers: ServerEntryWithPing[]): string {
   const table = new TablePrinter(["NAME", "HOST", "PORT", "PING"], {
     columnSpacing: 3,
   });
@@ -368,8 +321,8 @@ function formatServerPing(ping: ServerPing): string {
 }
 
 function compareServerPing(
-  left: ServerRegistryEntryWithPing,
-  right: ServerRegistryEntryWithPing,
+  left: ServerEntryWithPing,
+  right: ServerEntryWithPing,
 ): number {
   const result = pingSortValue(left.ping) - pingSortValue(right.ping);
   return result === 0 ? left.name.localeCompare(right.name) : result;

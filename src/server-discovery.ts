@@ -1,7 +1,4 @@
-import {
-  DEFAULT_SERVER_PORT,
-  type ServerRegistryEntry,
-} from "./server-registry";
+import { DEFAULT_SERVER_PORT, type ServerEntry } from "./server";
 import type { TailscaleClient, TailscaleDevice } from "./tailscale-client";
 
 const VMLOT_SERVER_TAG = "tag:vmlot-server";
@@ -9,14 +6,12 @@ const VMLOT_SERVER_TAG = "tag:vmlot-server";
 export class ServerDiscovery {
   constructor(private readonly tailscale: TailscaleClient) {}
 
-  async list(): Promise<ServerRegistryEntry[]> {
+  async list(): Promise<ServerEntry[]> {
     const devices = await this.tailscale.listDevices();
     return devices
       .filter((device) => hasTag(device, VMLOT_SERVER_TAG))
       .map(deviceToServer)
-      .filter(
-        (server): server is ServerRegistryEntry => server.endpoint.host !== "",
-      )
+      .filter((server): server is ServerEntry => server.endpoint.host !== "")
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 }
@@ -30,7 +25,7 @@ function hasTag(device: TailscaleDevice, tag: string): boolean {
   );
 }
 
-function deviceToServer(device: TailscaleDevice): ServerRegistryEntry {
+function deviceToServer(device: TailscaleDevice): ServerEntry {
   return {
     name: deviceHostname(device) ?? device.id,
     endpoint: {

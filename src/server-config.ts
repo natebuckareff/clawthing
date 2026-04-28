@@ -10,7 +10,7 @@ export interface TailscaleConfig {
   tailnet: string;
 }
 
-export interface ServerConfigData {
+interface ServerConfigData {
   tailscale: TailscaleConfig;
 }
 
@@ -28,10 +28,6 @@ interface TailscaleConfigFile {
 
 export class ServerConfig {
   constructor(private readonly path = defaultServerConfigPath()) {}
-
-  static defaultPath(): string {
-    return defaultServerConfigPath();
-  }
 
   async read(): Promise<ServerConfigData> {
     const file = JSON.parse(await this.readConfigFile()) as ServerConfigFile;
