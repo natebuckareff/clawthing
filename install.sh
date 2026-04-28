@@ -6,6 +6,7 @@ BINARY_URL="${VMLOT_BINARY_URL:-https://github.com/natebuckareff/vmlot/releases/
 SERVICE_PATH="${VMLOT_SERVICE_PATH:-/etc/systemd/system/vmlot.service}"
 SYSUSERS_PATH="${VMLOT_SYSUSERS_PATH:-/etc/sysusers.d/vmlot.conf}"
 CONFIG_DIR="${VMLOT_CONFIG_DIR:-/etc/vmlot}"
+TEMP_BINARY=""
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -101,12 +102,11 @@ main() {
   require_command systemctl
   require_command systemd-sysusers
 
-  local temp_binary
-  temp_binary="$(mktemp)"
-  trap 'rm -f "${temp_binary}"' EXIT
+  TEMP_BINARY="$(mktemp)"
+  trap 'rm -f "${TEMP_BINARY}"' EXIT
 
-  download_binary "${temp_binary}"
-  install -D -m 0755 "${temp_binary}" "${BIN_PATH}"
+  download_binary "${TEMP_BINARY}"
+  install -D -m 0755 "${TEMP_BINARY}" "${BIN_PATH}"
 
   write_sysusers_file
   systemd-sysusers "${SYSUSERS_PATH}"
