@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "bun build src/cli.ts --compile --outfile vmlot",
+    "build": "bun build src/cli.ts --compile --target=bun-linux-x64-baseline --outfile vmlot",
     "fmt": "bun --bun prettier --write src"
   },
   "dependencies": {
